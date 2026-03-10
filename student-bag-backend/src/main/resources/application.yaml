@@ -1,3 +1,24 @@
 spring:
-  application:
-    name: student-bag-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/student_bag
+    username: postgres
+    password: ayman@123
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: false
+
+server:
+  port: 8080
+
+app:
+  jwt:
+    secret: your_super_secret_key_123456789012345678901234567890
+    expiration: 86400000
