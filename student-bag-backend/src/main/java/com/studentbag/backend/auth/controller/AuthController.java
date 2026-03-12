@@ -1,7 +1,10 @@
 package com.studentbag.backend.auth.controller;
 
+import com.studentbag.backend.auth.dto.request.AdministratorRegisterRequest;
+import com.studentbag.backend.auth.dto.request.InstructorRegisterRequest;
 import com.studentbag.backend.auth.dto.request.LoginRequest;
-import com.studentbag.backend.auth.dto.request.RegisterRequest;
+import com.studentbag.backend.auth.dto.request.ParentRegisterRequest;
+import com.studentbag.backend.auth.dto.request.StudentRegisterRequest;
 import com.studentbag.backend.auth.dto.response.AuthResponse;
 import com.studentbag.backend.auth.service.AuthService;
 import jakarta.validation.Valid;
@@ -17,9 +20,24 @@ public class AuthController {
         this.authService = authService;
     }
 
-    @PostMapping("/register")
-    public AuthResponse register(@Valid @RequestBody RegisterRequest request) {
-        return authService.register(request);
+    @PostMapping("/register/student")
+    public AuthResponse registerStudent(@Valid @RequestBody StudentRegisterRequest request) {
+        return authService.registerStudent(request);
+    }
+
+    @PostMapping("/register/parent")
+    public AuthResponse registerParent(@Valid @RequestBody ParentRegisterRequest request) {
+        return authService.registerParent(request);
+    }
+
+    @PostMapping("/register/instructor")
+    public AuthResponse registerInstructor(@Valid @RequestBody InstructorRegisterRequest request) {
+        return authService.registerInstructor(request);
+    }
+
+    @PostMapping("/register/admin")
+    public AuthResponse registerAdministrator(@Valid @RequestBody AdministratorRegisterRequest request) {
+        return authService.registerAdministrator(request);
     }
 
     @PostMapping("/login")
