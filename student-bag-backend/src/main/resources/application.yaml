@@ -15,6 +15,18 @@ spring:
   flyway:
     enabled: false
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ayman.aljamal2017@gmail.com
+    password: ihep rqnx jyyl ucnp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 server:
   port: 8080
 

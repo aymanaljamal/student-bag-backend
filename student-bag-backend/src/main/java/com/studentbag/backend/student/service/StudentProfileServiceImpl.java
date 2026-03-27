@@ -1,13 +1,15 @@
 package com.studentbag.backend.student.service;
 
+import com.studentbag.backend.common.exception.ResourceNotFoundException;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.institution.repository.InstitutionRepository;
 import com.studentbag.backend.student.dto.request.UpdateStudentProfileRequest;
 import com.studentbag.backend.student.dto.response.StudentProfileResponse;
 import com.studentbag.backend.student.entity.Student;
+import com.studentbag.backend.student.mapper.StudentProfileMapper;
 import com.studentbag.backend.student.repository.StudentRepository;
-import com.studentbag.backend.student.service.StudentProfileService;
 import com.studentbag.backend.users.entity.User;
+import com.studentbag.backend.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,20 +23,34 @@ public class StudentProfileServiceImpl implements StudentProfileService {
 
     private final StudentRepository studentRepository;
     private final InstitutionRepository institutionRepository;
+    private final StudentProfileMapper studentProfileMapper;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional(readOnly = true)
     public StudentProfileResponse getMyProfile(UUID userId) {
         Student student = studentRepository.findByUser_Id(userId)
-                .orElseThrow(() -> new RuntimeException("Student profile not found"));
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Student profile not found for user id: " + userId));
 
-        return mapToResponse(student);
+        return studentProfileMapper.toResponse(student);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public StudentProfileResponse getMyProfileByEmail(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("User not found with email: " + email));
+
+        return getMyProfile(user.getId());
     }
 
     @Override
     public StudentProfileResponse updateMyProfile(UUID userId, UpdateStudentProfileRequest request) {
         Student student = studentRepository.findByUser_Id(userId)
-                .orElseThrow(() -> new RuntimeException("Student profile not found"));
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Student profile not found for user id: " + userId));
 
         User user = student.getUser();
 
@@ -58,50 +74,29 @@ public class StudentProfileServiceImpl implements StudentProfileService {
             student.setAcademicLevel(request.getAcademicLevel());
         }
 
-        if (request.getSchoolGrade() != null) {
-            student.setSchoolGrade(request.getSchoolGrade());
-        }
-
         if (request.getUniversityMajor() != null) {
             student.setUniversityMajor(request.getUniversityMajor());
         }
 
         if (request.getInstitutionId() != null) {
             Institution institution = institutionRepository.findById(request.getInstitutionId())
-                    .orElseThrow(() -> new RuntimeException("Institution not found"));
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException(
+                                    "Institution not found with id: " + request.getInstitutionId()
+                            ));
             student.setInstitution(institution);
         }
 
-        if (request.getGpaVisibleToParents() != null) {
-            student.setGpaVisibleToParents(request.getGpaVisibleToParents());
-        }
-
         Student savedStudent = studentRepository.save(student);
-
-        return mapToResponse(savedStudent);
+        return studentProfileMapper.toResponse(savedStudent);
     }
 
-    private StudentProfileResponse mapToResponse(Student student) {
-        User user = student.getUser();
+    @Override
+    public StudentProfileResponse updateMyProfileByEmail(String email, UpdateStudentProfileRequest request) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("User not found with email: " + email));
 
-        return StudentProfileResponse.builder()
-                .studentId(student.getId())
-                .userId(user.getId())
-                .fullName(user.getFullName())
-                .email(user.getEmail())
-                .phone(user.getPhone())
-                .avatarUrl(user.getAvatarUrl())
-                .languageCode(user.getLanguageCode())
-                .role(user.getRole().name())
-                .active(user.isActive())
-                .emailVerified(user.isEmailVerified())
-                .phoneVerified(user.isPhoneVerified())
-                .academicLevel(student.getAcademicLevel())
-                .schoolGrade(student.getSchoolGrade())
-                .universityMajor(student.getUniversityMajor())
-                .institutionId(student.getInstitution() != null ? student.getInstitution().getId() : null)
-                .institutionName(student.getInstitution() != null ? student.getInstitution().getName() : null)
-                .gpaVisibleToParents(student.isGpaVisibleToParents())
-                .build();
+        return updateMyProfile(user.getId(), request);
     }
 }

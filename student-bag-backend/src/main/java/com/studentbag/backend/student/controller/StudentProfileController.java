@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.UUID;
 @RestController
 @RequestMapping("/api/student/profile")
 @RequiredArgsConstructor
@@ -16,15 +15,17 @@ public class StudentProfileController {
     private final StudentProfileService studentProfileService;
 
     @GetMapping("/me")
-    public StudentProfileResponse getMyProfile(@AuthenticationPrincipal(expression = "id") UUID userId) {
-        return studentProfileService.getMyProfile(userId);
+    public StudentProfileResponse getMyProfile(
+            @AuthenticationPrincipal(expression = "username") String email
+    ) {
+        return studentProfileService.getMyProfileByEmail(email);
     }
 
     @PutMapping("/me")
     public StudentProfileResponse updateMyProfile(
-            @AuthenticationPrincipal(expression = "id") UUID userId,
+            @AuthenticationPrincipal(expression = "username") String email,
             @RequestBody UpdateStudentProfileRequest request
     ) {
-        return studentProfileService.updateMyProfile(userId, request);
+        return studentProfileService.updateMyProfileByEmail(email, request);
     }
 }

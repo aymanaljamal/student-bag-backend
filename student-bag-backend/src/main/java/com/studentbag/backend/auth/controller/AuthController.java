@@ -1,13 +1,15 @@
 package com.studentbag.backend.auth.controller;
 
 import com.studentbag.backend.auth.dto.request.AdministratorRegisterRequest;
+import com.studentbag.backend.auth.dto.request.ChangePasswordRequest;
 import com.studentbag.backend.auth.dto.request.InstructorRegisterRequest;
 import com.studentbag.backend.auth.dto.request.LoginRequest;
-import com.studentbag.backend.auth.dto.request.ParentRegisterRequest;
 import com.studentbag.backend.auth.dto.request.StudentRegisterRequest;
+import com.studentbag.backend.auth.dto.response.ApiMessageResponse;
 import com.studentbag.backend.auth.dto.response.AuthResponse;
 import com.studentbag.backend.auth.service.AuthService;
 import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -25,10 +27,7 @@ public class AuthController {
         return authService.registerStudent(request);
     }
 
-    @PostMapping("/register/parent")
-    public AuthResponse registerParent(@Valid @RequestBody ParentRegisterRequest request) {
-        return authService.registerParent(request);
-    }
+
 
     @PostMapping("/register/instructor")
     public AuthResponse registerInstructor(@Valid @RequestBody InstructorRegisterRequest request) {
@@ -43,5 +42,22 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/change-password")
+    public ApiMessageResponse changePassword(
+            Authentication authentication,
+            @Valid @RequestBody ChangePasswordRequest request
+    ) {
+        String email = authentication.getName();
+
+        authService.changePasswordByEmail(
+                email,
+                request.getCurrentPassword(),
+                request.getNewPassword(),
+                request.getConfirmPassword()
+        );
+
+        return new ApiMessageResponse("Password changed successfully");
     }
 }
