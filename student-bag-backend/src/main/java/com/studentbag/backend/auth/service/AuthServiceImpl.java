@@ -1,21 +1,17 @@
-package com.studentbag.backend.auth.service.impl;
+package com.studentbag.backend.auth.service;
 
 import com.studentbag.backend.administrator.entity.Administrator;
 import com.studentbag.backend.administrator.repository.AdministratorRepository;
 import com.studentbag.backend.auth.dto.request.AdministratorRegisterRequest;
 import com.studentbag.backend.auth.dto.request.InstructorRegisterRequest;
 import com.studentbag.backend.auth.dto.request.LoginRequest;
-import com.studentbag.backend.auth.dto.request.ParentRegisterRequest;
 import com.studentbag.backend.auth.dto.request.StudentRegisterRequest;
 import com.studentbag.backend.auth.dto.response.AuthResponse;
-import com.studentbag.backend.auth.service.AuthService;
 import com.studentbag.backend.domain.enums.UserRole;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.institution.repository.InstitutionRepository;
 import com.studentbag.backend.instructor.entity.Instructor;
 import com.studentbag.backend.instructor.repository.InstructorRepository;
-import com.studentbag.backend.parent.entity.Parent;
-import com.studentbag.backend.parent.repository.ParentRepository;
 import com.studentbag.backend.security.jwt.JwtService;
 import com.studentbag.backend.student.entity.Student;
 import com.studentbag.backend.student.repository.StudentRepository;
@@ -24,6 +20,7 @@ import com.studentbag.backend.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,17 +29,17 @@ public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
     private final StudentRepository studentRepository;
-    private final ParentRepository parentRepository;
     private final InstructorRepository instructorRepository;
     private final AdministratorRepository administratorRepository;
     private final InstitutionRepository institutionRepository;
-    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
 
     @Override
     public AuthResponse registerStudent(StudentRegisterRequest request) {
         validateEmail(request.getEmail());
+
         User user = userRepository.save(buildBaseUser(
                 request.getFullName(),
                 request.getEmail(),
@@ -53,34 +50,9 @@ public class AuthServiceImpl implements AuthService {
 
         studentRepository.save(Student.builder()
                 .user(user)
-                .academicLevel(request.getAcademicLevel())
-                .schoolGrade(request.getSchoolGrade())
+                .academicLevel(String.valueOf(request.getAcademicLevel()))
                 .universityMajor(request.getUniversityMajor())
                 .gpaVisibleToParents(true)
-                .build());
-
-        return buildAuthResponse(user);
-    }
-
-    @Override
-    public AuthResponse registerParent(ParentRegisterRequest request) {
-        validateEmail(request.getEmail());
-
-        User user = userRepository.save(buildBaseUser(
-                request.getFullName(),
-                request.getEmail(),
-                request.getPhone(),
-                request.getPassword(),
-                UserRole.PARENT
-        ));
-
-        parentRepository.save(Parent.builder()
-                .user(user)
-                .defaultRelationshipLabel(
-                        request.getDefaultRelationshipLabel() == null || request.getDefaultRelationshipLabel().isBlank()
-                                ? "Parent"
-                                : request.getDefaultRelationshipLabel()
-                )
                 .build());
 
         return buildAuthResponse(user);
@@ -114,9 +86,6 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse registerAdministrator(AdministratorRegisterRequest request) {
         validateEmail(request.getEmail());
 
-        Institution institution = institutionRepository.findById(request.getInstitutionId())
-                .orElseThrow(() -> new RuntimeException("Institution not found"));
-
         User user = userRepository.save(buildBaseUser(
                 request.getFullName(),
                 request.getEmail(),
@@ -127,8 +96,11 @@ public class AuthServiceImpl implements AuthService {
 
         administratorRepository.save(Administrator.builder()
                 .user(user)
-                .adminScope(request.getAdminScope())
-                .institution(institution)
+                .adminScope(
+                        request.getAdminScope() == null || request.getAdminScope().isBlank()
+                                ? "FULL"
+                                : request.getAdminScope()
+                )
                 .build());
 
         return buildAuthResponse(user);
@@ -147,6 +119,27 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
         return buildAuthResponse(user);
+    }
+
+    @Override
+    public void changePasswordByEmail(String email, String currentPassword, String newPassword, String confirmPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new RuntimeException("Current password is incorrect");
+        }
+
+        if (!newPassword.equals(confirmPassword)) {
+            throw new RuntimeException("New password and confirm password do not match");
+        }
+
+        if (currentPassword.equals(newPassword)) {
+            throw new RuntimeException("New password must be different from current password");
+        }
+
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
     }
 
     private void validateEmail(String email) {

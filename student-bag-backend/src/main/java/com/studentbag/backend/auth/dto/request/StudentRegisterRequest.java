@@ -1,5 +1,6 @@
 package com.studentbag.backend.auth.dto.request;
 
+import com.studentbag.backend.domain.enums.AcademicLevel;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -9,8 +10,7 @@ import lombok.EqualsAndHashCode;
 public class StudentRegisterRequest extends BaseRegisterRequest {
 
     @NotNull
+    private AcademicLevel academicLevel;
 
-    private String academicLevel;
-    private String schoolGrade;
     private String universityMajor;
 }

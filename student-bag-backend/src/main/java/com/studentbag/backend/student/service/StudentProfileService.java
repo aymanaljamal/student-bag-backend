@@ -10,4 +10,8 @@ public interface StudentProfileService {
     StudentProfileResponse getMyProfile(UUID userId);
 
     StudentProfileResponse updateMyProfile(UUID userId, UpdateStudentProfileRequest request);
+
+    StudentProfileResponse getMyProfileByEmail(String email);
+
+    StudentProfileResponse updateMyProfileByEmail(String email, UpdateStudentProfileRequest request);
 }

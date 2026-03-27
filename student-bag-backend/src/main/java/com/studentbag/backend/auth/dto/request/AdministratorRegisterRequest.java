@@ -8,8 +8,6 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 public class AdministratorRegisterRequest extends BaseRegisterRequest {
 
-    @NotNull
-    private Long institutionId;
 
     private String adminScope;
 }
