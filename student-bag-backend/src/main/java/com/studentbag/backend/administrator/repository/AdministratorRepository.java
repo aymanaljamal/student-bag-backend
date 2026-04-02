@@ -7,4 +7,5 @@ import java.util.Optional;
 import java.util.UUID;
 public interface AdministratorRepository extends JpaRepository<Administrator, Long> {
     Optional<Administrator> findByUser_Id(UUID userId);
+    Optional<Administrator> findByUserId(UUID userId);
 }

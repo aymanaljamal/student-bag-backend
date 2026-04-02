@@ -173,12 +173,34 @@ public class AuthServiceImpl implements AuthService {
                 user.getRole().name()
         );
 
+        Long studentId = null;
+        Long instructorId = null;
+        Long administratorId = null;
+
+        if (user.getRole() == UserRole.STUDENT) {
+            Student student = studentRepository.findByUserId(user.getId())
+                    .orElseThrow(() -> new RuntimeException("Student profile not found"));
+            studentId = student.getId();
+        } else if (user.getRole() == UserRole.INSTRUCTOR) {
+            Instructor instructor = instructorRepository.findByUserId(user.getId())
+                    .orElseThrow(() -> new RuntimeException("Instructor profile not found"));
+            instructorId = instructor.getId();
+        } else if (user.getRole() == UserRole.ADMINISTRATOR) {
+            Administrator administrator = administratorRepository.findByUserId(user.getId())
+                    .orElseThrow(() -> new RuntimeException("Administrator profile not found"));
+            administratorId = administrator.getId();
+        }
+
         return AuthResponse.builder()
                 .token(token)
                 .userId(user.getId())
+                .studentId(studentId)
+                .instructorId(instructorId)
+                .administratorId(administratorId)
                 .fullName(user.getFullName())
                 .email(user.getEmail())
                 .role(user.getRole())
+                .avatarUrl(user.getAvatarUrl())
                 .build();
     }
 }

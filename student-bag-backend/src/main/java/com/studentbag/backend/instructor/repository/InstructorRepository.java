@@ -8,5 +8,6 @@ import java.util.UUID;
 public interface InstructorRepository extends JpaRepository<Instructor, Long> {
 
     Optional<Instructor> findByUser_Id(UUID userId);
+    Optional<Instructor> findByUserId(UUID userId);
 }
 
