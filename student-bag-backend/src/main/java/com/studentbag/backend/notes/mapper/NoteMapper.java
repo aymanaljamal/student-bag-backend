@@ -22,7 +22,12 @@ public class NoteMapper {
         note.setTitle(request.getTitle());
         note.setContentHtml(request.getContentHtml());
         note.setIsImportant(request.getIsImportant() != null ? request.getIsImportant() : false);
+        note.setIsPinned(request.getIsPinned() != null ? request.getIsPinned() : false);
+        note.setIsArchived(request.getIsArchived() != null ? request.getIsArchived() : false);
         note.setIsDeleted(request.getIsDeleted() != null ? request.getIsDeleted() : false);
+        note.setPriority(request.getPriority() != null ? request.getPriority() : note.getPriority());
+        note.setNoteType(request.getNoteType() != null ? request.getNoteType() : note.getNoteType());
+        note.setColor(request.getColor());
         note.setTags(request.getTags());
         return note;
     }
@@ -33,8 +38,13 @@ public class NoteMapper {
         note.setTitle(request.getTitle());
         note.setContentHtml(request.getContentHtml());
         note.setIsImportant(request.getIsImportant() != null ? request.getIsImportant() : note.getIsImportant());
+        note.setIsPinned(request.getIsPinned() != null ? request.getIsPinned() : note.getIsPinned());
+        note.setIsArchived(request.getIsArchived() != null ? request.getIsArchived() : note.getIsArchived());
         note.setIsDeleted(request.getIsDeleted() != null ? request.getIsDeleted() : note.getIsDeleted());
-        note.setTags(request.getTags());
+        note.setPriority(request.getPriority() != null ? request.getPriority() : note.getPriority());
+        note.setNoteType(request.getNoteType() != null ? request.getNoteType() : note.getNoteType());
+        note.setColor(request.getColor() != null ? request.getColor() : note.getColor());
+        note.setTags(request.getTags() != null ? request.getTags() : note.getTags());
     }
 
     public NoteAttachment toAttachmentEntity(NoteAttachmentRequest request, Note note) {
@@ -70,7 +80,12 @@ public class NoteMapper {
                 .title(note.getTitle())
                 .contentHtml(note.getContentHtml())
                 .isImportant(note.getIsImportant())
+                .isPinned(note.getIsPinned())
+                .isArchived(note.getIsArchived())
                 .isDeleted(note.getIsDeleted())
+                .priority(note.getPriority())
+                .noteType(note.getNoteType())
+                .color(note.getColor())
                 .tags(note.getTags())
                 .attachments(
                         attachments == null

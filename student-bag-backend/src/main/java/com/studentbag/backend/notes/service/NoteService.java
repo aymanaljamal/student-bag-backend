@@ -29,7 +29,12 @@ public class NoteService {
         existing.setTitle(updatedNote.getTitle());
         existing.setContentHtml(updatedNote.getContentHtml());
         existing.setIsImportant(updatedNote.getIsImportant());
+        existing.setIsPinned(updatedNote.getIsPinned());
+        existing.setIsArchived(updatedNote.getIsArchived());
         existing.setIsDeleted(updatedNote.getIsDeleted());
+        existing.setPriority(updatedNote.getPriority());
+        existing.setNoteType(updatedNote.getNoteType());
+        existing.setColor(updatedNote.getColor());
         existing.setTags(updatedNote.getTags());
 
         return noteRepository.save(existing);
@@ -45,15 +50,35 @@ public class NoteService {
     }
 
     public List<Note> getStudentNotes(Long studentId) {
-        return noteRepository.findByStudentIdAndIsDeletedFalse(studentId);
+        return noteRepository.findByStudentIdAndIsDeletedFalseAndIsArchivedFalseOrderByIsPinnedDescCreatedAtDesc(studentId);
+    }
+
+    public List<Note> getArchivedNotes(Long studentId) {
+        return noteRepository.findByStudentIdAndIsArchivedTrueAndIsDeletedFalse(studentId);
     }
 
     public List<Note> getStudentNotesByCourse(Long studentId, Long courseId) {
-        return noteRepository.findByStudentIdAndCourseIdAndIsDeletedFalse(studentId, courseId);
+        return noteRepository.findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalse(studentId, courseId);
     }
 
     public List<Note> getImportantNotes(Long studentId) {
         return noteRepository.findByStudentIdAndIsImportantTrueAndIsDeletedFalse(studentId);
+    }
+
+    public List<Note> getPinnedNotes(Long studentId) {
+        return noteRepository.findByStudentIdAndIsPinnedTrueAndIsDeletedFalse(studentId);
+    }
+
+    public List<Note> getNotesByType(Long studentId, com.studentbag.backend.domain.enums.NoteType noteType) {
+        return noteRepository.findByStudentIdAndNoteTypeAndIsDeletedFalse(studentId, noteType);
+    }
+
+    public List<Note> getNotesByPriority(Long studentId, com.studentbag.backend.domain.enums.NotePriority priority) {
+        return noteRepository.findByStudentIdAndPriorityAndIsDeletedFalse(studentId, priority);
+    }
+
+    public List<Note> getNotesByColor(Long studentId, String color) {
+        return noteRepository.findByStudentIdAndColorIgnoreCaseAndIsDeletedFalse(studentId, color);
     }
 
     public List<Note> searchByTitle(Long studentId, String title) {
@@ -66,9 +91,27 @@ public class NoteService {
         return noteRepository.save(note);
     }
 
+    public Note pin(Long noteId) {
+        Note note = getById(noteId);
+        note.pin();
+        return noteRepository.save(note);
+    }
+
+    public Note unpin(Long noteId) {
+        Note note = getById(noteId);
+        note.unpin();
+        return noteRepository.save(note);
+    }
+
     public Note archive(Long noteId) {
         Note note = getById(noteId);
         note.archive();
+        return noteRepository.save(note);
+    }
+
+    public Note softDelete(Long noteId) {
+        Note note = getById(noteId);
+        note.delete();
         return noteRepository.save(note);
     }
 
@@ -84,7 +127,9 @@ public class NoteService {
     public List<NoteAttachment> getAttachments(Long noteId) {
         return noteAttachmentRepository.findByNoteId(noteId);
     }
-
+    public List<Note> getDeletedNotes(Long studentId) {
+        return noteRepository.findByStudentIdAndIsDeletedTrue(studentId);
+    }
     public NoteAttachment getAttachmentById(Long attachmentId) {
         return noteAttachmentRepository.findById(attachmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Note attachment not found with id: " + attachmentId));
