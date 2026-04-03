@@ -21,6 +21,7 @@ public class NoteMapper {
         note.setCourse(course);
         note.setTitle(request.getTitle());
         note.setContentHtml(request.getContentHtml());
+        note.setContentJson(request.getContentJson());
         note.setIsImportant(request.getIsImportant() != null ? request.getIsImportant() : false);
         note.setIsPinned(request.getIsPinned() != null ? request.getIsPinned() : false);
         note.setIsArchived(request.getIsArchived() != null ? request.getIsArchived() : false);
@@ -37,6 +38,7 @@ public class NoteMapper {
         note.setCourse(course);
         note.setTitle(request.getTitle());
         note.setContentHtml(request.getContentHtml());
+        note.setContentJson(request.getContentJson());
         note.setIsImportant(request.getIsImportant() != null ? request.getIsImportant() : note.getIsImportant());
         note.setIsPinned(request.getIsPinned() != null ? request.getIsPinned() : note.getIsPinned());
         note.setIsArchived(request.getIsArchived() != null ? request.getIsArchived() : note.getIsArchived());
@@ -79,6 +81,7 @@ public class NoteMapper {
                 .courseId(note.getCourse() != null ? note.getCourse().getId() : null)
                 .title(note.getTitle())
                 .contentHtml(note.getContentHtml())
+                .contentJson(note.getContentJson())
                 .isImportant(note.getIsImportant())
                 .isPinned(note.getIsPinned())
                 .isArchived(note.getIsArchived())
