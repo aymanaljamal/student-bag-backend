@@ -28,6 +28,7 @@ public class NoteService {
         existing.setCourse(updatedNote.getCourse());
         existing.setTitle(updatedNote.getTitle());
         existing.setContentHtml(updatedNote.getContentHtml());
+        existing.setContentJson(updatedNote.getContentJson());
         existing.setIsImportant(updatedNote.getIsImportant());
         existing.setIsPinned(updatedNote.getIsPinned());
         existing.setIsArchived(updatedNote.getIsArchived());

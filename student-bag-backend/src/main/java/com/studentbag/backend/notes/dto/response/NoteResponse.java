@@ -6,7 +6,6 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.util.List;
 
 @Getter
@@ -18,6 +17,7 @@ public class NoteResponse {
     private Long courseId;
     private String title;
     private String contentHtml;
+    private String contentJson;
 
     private Boolean isImportant;
     private Boolean isPinned;

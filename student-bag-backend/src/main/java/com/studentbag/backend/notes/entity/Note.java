@@ -31,6 +31,9 @@ public class Note extends BaseEntity {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String contentHtml;
 
+    @Column(columnDefinition = "TEXT")
+    private String contentJson;
+
     @Column(nullable = false)
     private Boolean isImportant = false;
 
