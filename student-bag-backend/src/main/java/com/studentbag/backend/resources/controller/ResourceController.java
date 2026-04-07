@@ -111,12 +111,12 @@ public class ResourceController {
 
         Term term = null;
         if (request.getTermId() != null) {
-            term = termService.getById(request.getTermId());
+           // term = termService.getById(request.getTermId());
         }
 
         Course course = null;
         if (request.getCourseId() != null) {
-            course = courseService.getById(request.getCourseId());
+          //  course = courseService.getById(request.getCourseId());
         }
 
         AdminResource entity = resourceMapper.toAdminResourceEntity(
@@ -140,12 +140,12 @@ public class ResourceController {
 
         Term term = null;
         if (request.getTermId() != null) {
-            term = termService.getById(request.getTermId());
+           // term = termService.getById(request.getTermId());
         }
 
         Course course = null;
         if (request.getCourseId() != null) {
-            course = courseService.getById(request.getCourseId());
+        //    course = courseService.getById(request.getCourseId());
         }
 
         AdminResource existing = adminResourceService.getAdminResourceById(id);
@@ -224,7 +224,7 @@ public class ResourceController {
 
         Course course = null;
         if (request.getCourseId() != null) {
-            course = courseService.getById(request.getCourseId());
+          //  course = courseService.getById(request.getCourseId());
         }
 
         PersonalResourceFolder entity = resourceMapper.toFolderEntity(request, student, parentFolder, course);
@@ -248,7 +248,7 @@ public class ResourceController {
 
         Course course = null;
         if (request.getCourseId() != null) {
-            course = courseService.getById(request.getCourseId());
+         //   course = courseService.getById(request.getCourseId());
         }
 
         PersonalResourceFolder existing = personalResourceService.getFolderById(id);

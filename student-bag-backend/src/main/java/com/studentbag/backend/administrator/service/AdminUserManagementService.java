@@ -21,5 +21,5 @@ public interface AdminUserManagementService {
 
     AuthResponse createStudent(StudentRegisterRequest request);
 
-    AuthResponse createInstructor(InstructorRegisterRequest request);
+   // AuthResponse createInstructor(InstructorRegisterRequest request);
 }

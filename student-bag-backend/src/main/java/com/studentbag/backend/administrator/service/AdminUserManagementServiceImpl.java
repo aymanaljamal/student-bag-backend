@@ -90,10 +90,10 @@ public class AdminUserManagementServiceImpl implements AdminUserManagementServic
         return authService.registerStudent(request);
     }
 
-    @Override
-    public AuthResponse createInstructor(InstructorRegisterRequest request) {
-        return authService.registerInstructor(request);
-    }
+  // @Override
+   // public AuthResponse createInstructor(InstructorRegisterRequest request) {
+       // return authService.registerInstructor(request);
+   // }
 
     private AdminManagedUserDetailsResponse mapToDetails(User user) {
         AdminManagedUserDetailsResponse.AdminManagedUserDetailsResponseBuilder builder =
@@ -130,7 +130,6 @@ public class AdminUserManagementServiceImpl implements AdminUserManagementServic
 
             builder
                     .domainProfileId(instructor.getId())
-                    .department(instructor.getDepartment())
                     .institutionId(instructor.getInstitution() != null ? instructor.getInstitution().getId() : null)
                     .institutionName(instructor.getInstitution() != null ? instructor.getInstitution().getName() : null);
 
