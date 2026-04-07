@@ -1,25 +1,18 @@
 package com.studentbag.backend.institution.entity;
 
+import com.studentbag.backend.common.entity.BaseEntity;
 import com.studentbag.backend.domain.enums.InstitutionType;
 import jakarta.persistence.*;
-import lombok.*;
-
-import java.time.LocalDateTime;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
 @Table(name = "institutions")
 @Getter
 @Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
-public class Institution {
+public class Institution extends BaseEntity {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(nullable = false)
+    @Column(nullable = false, unique = true)
     private String name;
 
     @Enumerated(EnumType.STRING)
@@ -30,12 +23,6 @@ public class Institution {
     private String city;
     private String website;
 
-    private boolean active = true;
-
-    private LocalDateTime createdAt;
-
-    @PrePersist
-    public void onCreate() {
-        createdAt = LocalDateTime.now();
-    }
+    @Column(nullable = false)
+    private Boolean active = true;
 }

@@ -1,0 +1,18 @@
+[ {
+  "externalId" : null,
+  "code" : "COMP101",
+  "nameArabic" : "تجربة إنشاء ملف",
+  "nameEnglish" : null,
+  "description" : null,
+  "academicLevel" : null,
+  "creditHours" : null,
+  "facultyExternalId" : null,
+  "departmentExternalId" : null,
+  "facultyNameArabic" : null,
+  "facultyNameEnglish" : null,
+  "departmentNameArabic" : null,
+  "departmentNameEnglish" : null,
+  "programNameArabic" : null,
+  "programNameEnglish" : null,
+  "sections" : [ ]
+} ]

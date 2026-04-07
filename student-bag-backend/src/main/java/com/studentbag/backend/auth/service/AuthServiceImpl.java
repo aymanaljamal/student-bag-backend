@@ -58,29 +58,29 @@ public class AuthServiceImpl implements AuthService {
         return buildAuthResponse(user);
     }
 
-    @Override
-    public AuthResponse registerInstructor(InstructorRegisterRequest request) {
-        validateEmail(request.getEmail());
-
-        Institution institution = institutionRepository.findById(request.getInstitutionId())
-                .orElseThrow(() -> new RuntimeException("Institution not found"));
-
-        User user = userRepository.save(buildBaseUser(
-                request.getFullName(),
-                request.getEmail(),
-                request.getPhone(),
-                request.getPassword(),
-                UserRole.INSTRUCTOR
-        ));
-
-        instructorRepository.save(Instructor.builder()
-                .user(user)
-                .department(request.getDepartment())
-                .institution(institution)
-                .build());
-
-        return buildAuthResponse(user);
-    }
+  //  @Override
+//    public AuthResponse registerInstructor(InstructorRegisterRequest request) {
+//        validateEmail(request.getEmail());
+//
+//        Institution institution = institutionRepository.findById(request.getInstitutionId())
+//                .orElseThrow(() -> new RuntimeException("Institution not found"));
+//
+//        User user = userRepository.save(buildBaseUser(
+//                request.getFullName(),
+//                request.getEmail(),
+//                request.getPhone(),
+//                request.getPassword(),
+//                UserRole.INSTRUCTOR
+//        ));
+//
+//        instructorRepository.save(Instructor.builder()
+//                .user(user)
+//                .department(request.getDepartment())
+//                .institution(institution)
+//                .build());
+//
+//        return buildAuthResponse(user);
+//    }
 
     @Override
     public AuthResponse registerAdministrator(AdministratorRegisterRequest request) {

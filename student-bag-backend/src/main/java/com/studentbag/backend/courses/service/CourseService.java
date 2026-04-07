@@ -1,77 +1,59 @@
 package com.studentbag.backend.courses.service;
 
-import com.studentbag.backend.common.exception.ResourceNotFoundException;
-import com.studentbag.backend.courses.entity.Course;
-import com.studentbag.backend.courses.repository.CourseRepository;
-import com.studentbag.backend.domain.enums.AcademicLevel;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
+import com.studentbag.backend.courses.dto.request.CourseRequestDTO;
+import com.studentbag.backend.courses.dto.response.CourseResponseDTO;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 
-@Service
-@RequiredArgsConstructor
-public class CourseService {
+/**
+ * Service interface for managing Courses (advanced)
+ */
+public interface CourseService {
 
-    private final CourseRepository courseRepository;
+    /**
+     * Create new course
+     */
+    CourseResponseDTO create(CourseRequestDTO request);
 
-    public Course create(Course course) {
-        if (courseRepository.existsByCode(course.getCode())) {
-            throw new IllegalArgumentException("Course code already exists: " + course.getCode());
-        }
-        return courseRepository.save(course);
-    }
+    /**
+     * Update existing course
+     */
+    CourseResponseDTO update(Long id, CourseRequestDTO request);
 
-    public Course update(Long id, Course updatedCourse) {
-        Course existing = getById(id);
+    /**
+     * Get course by ID
+     * @param includeSections whether to include course sections in response
+     */
+    CourseResponseDTO getById(Long id, boolean includeSections);
 
-        existing.setCode(updatedCourse.getCode());
-        existing.setName(updatedCourse.getName());
-        existing.setDescription(updatedCourse.getDescription());
-        existing.setCreditHours(updatedCourse.getCreditHours());
-        existing.setLevel(updatedCourse.getLevel());
-        existing.setInstitution(updatedCourse.getInstitution());
-        existing.setIsActive(updatedCourse.getIsActive());
+    /**
+     * Get all courses
+     * @param includeSections whether to include course sections in response
+     */
+    List<CourseResponseDTO> getAll(boolean includeSections);
 
-        return courseRepository.save(existing);
-    }
+    /**
+     * Delete course by ID
+     */
+    void delete(Long id);
 
-    public Course getById(Long id) {
-        return courseRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Course not found with id: " + id));
-    }
-
-    public Course getByCode(String code) {
-        return courseRepository.findByCode(code)
-                .orElseThrow(() -> new ResourceNotFoundException("Course not found with code: " + code));
-    }
-
-    public List<Course> getAll() {
-        return courseRepository.findAll();
-    }
-
-    public List<Course> getActiveByInstitution(Long institutionId) {
-        return courseRepository.findByInstitutionIdAndIsActiveTrue(institutionId);
-    }
-
-    public List<Course> getByLevel(AcademicLevel level) {
-        return courseRepository.findByLevelAndIsActiveTrue(level);
-    }
-
-    public void delete(Long id) {
-        Course course = getById(id);
-        courseRepository.delete(course);
-    }
-
-    public void deactivate(Long id) {
-        Course course = getById(id);
-        course.setIsActive(false);
-        courseRepository.save(course);
-    }
-
-    public void activate(Long id) {
-        Course course = getById(id);
-        course.setIsActive(true);
-        courseRepository.save(course);
-    }
+    /**
+     * Advanced search with pagination and optional sections
+     * @param keyword search by name/code
+     * @param institutionId filter by institution
+     * @param level filter by academic level
+     * @param isActive filter active/inactive courses
+     * @param includeSections include course sections in response
+     * @param pageable pagination info
+     */
+    Page<CourseResponseDTO> search(
+            String keyword,
+            Long institutionId,
+            String level,
+            Boolean isActive,
+            boolean includeSections,
+            Pageable pageable
+    );
 }

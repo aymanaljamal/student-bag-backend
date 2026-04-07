@@ -108,7 +108,7 @@ public class NoteController {
 
         Course course = null;
         if (request.getCourseId() != null) {
-            course = courseService.getById(request.getCourseId());
+        //    course = courseService.getById(request.getCourseId());
         }
 
         Note note = noteMapper.toEntity(request, student, course);
@@ -152,7 +152,7 @@ public class NoteController {
 
         Course course = null;
         if (request.getCourseId() != null) {
-            course = courseService.getById(request.getCourseId());
+        //    course = courseService.getById(request.getCourseId());
         }
 
         Note existing = noteService.getById(id);

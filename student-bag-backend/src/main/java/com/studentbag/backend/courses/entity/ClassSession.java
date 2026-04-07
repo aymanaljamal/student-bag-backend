@@ -32,6 +32,11 @@ public class ClassSession extends BaseEntity {
 
     private String building;
 
+    private String campus;
+
+    @Column(nullable = false)
+    private Boolean isOnline = false;
+
     public int getDurationMinutes() {
         return (endTime.getHour() * 60 + endTime.getMinute())
                 - (startTime.getHour() * 60 + startTime.getMinute());
