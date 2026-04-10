@@ -14,9 +14,6 @@ import org.springframework.stereotype.Service;
 import java.time.DayOfWeek;
 import java.util.*;
 
-/**
- * Service to rank and score generated schedule combinations based on student preferences.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -26,67 +23,69 @@ public class PreferenceRankingServiceImpl implements PreferenceRankingService {
     private final TimetableMapper timetableMapper;
 
     @Override
-    public List<ScheduleOptionResponseDTO> rankAndScore(List<List<CourseSection>> options, Long studentId) {
-        // 1. Fetch student preferences or use defaults
+    public List<ScheduleOptionResponseDTO> rankAndScore(
+            List<List<CourseSection>> options,
+            Long studentId,
+            Map<Long, Integer> courseRatings
+    ) {
         StudentSchedulePreference prefs = prefRepository.findByStudentId(studentId)
                 .orElse(new StudentSchedulePreference());
 
         List<ScheduleOptionResponseDTO> rankedOptions = new ArrayList<>();
 
-        // 2. Score each combination
         for (List<CourseSection> combination : options) {
             List<String> insights = new ArrayList<>();
-            double score = calculateTotalScore(combination, prefs, insights);
-
-            // Mapping using TimetableMapper to include insights and logic
+            double score = calculateTotalScore(combination, prefs, insights, courseRatings);
             rankedOptions.add(timetableMapper.toOptionDTO(combination, score, insights));
         }
 
-        // 3. Sort from highest score to lowest
         rankedOptions.sort(Comparator.comparing(ScheduleOptionResponseDTO::getScore).reversed());
-
-        // 4. Assign dynamic labels to the top results
         assignRankLabels(rankedOptions);
 
         return rankedOptions;
     }
 
-    private double calculateTotalScore(List<CourseSection> sections, StudentSchedulePreference prefs, List<String> insights) {
+    private double calculateTotalScore(
+            List<CourseSection> sections,
+            StudentSchedulePreference prefs,
+            List<String> insights,
+            Map<Long, Integer> courseRatings
+    ) {
         double score = 100.0;
         Map<DayOfWeek, Integer> dailyDifficultyMap = new HashMap<>();
         boolean earlyMorningFound = false;
         Set<DayOfWeek> activeDays = new HashSet<>();
 
         for (CourseSection section : sections) {
-            // Assume default difficulty is 3 if not specified
+            Long courseId = section.getCourse() != null ? section.getCourse().getId() : null;
+
             int difficulty = 3;
+            if (courseId != null && courseRatings != null) {
+                difficulty = courseRatings.getOrDefault(courseId, 3);
+            }
 
             for (ClassSession session : section.getClassSessions()) {
                 activeDays.add(session.getDayOfWeek());
 
-                // FR-4.5: Penalty for early morning sessions if student prefers to avoid them
-                if (prefs.getAvoidEarlyMorning() && prefs.getEarliestStartTime() != null) {
+                if (Boolean.TRUE.equals(prefs.getAvoidEarlyMorning()) && prefs.getEarliestStartTime() != null) {
                     if (session.getStartTime().isBefore(prefs.getEarliestStartTime())) {
-                        score -= 5.0; // Deduct 5 points per early session
+                        score -= 5.0;
                         earlyMorningFound = true;
                     }
                 }
 
-                // Track workload per day for FR-4.6
                 dailyDifficultyMap.merge(session.getDayOfWeek(), difficulty, Integer::sum);
             }
         }
 
-        // FR-4.6: Difficulty Balancing Logic
         for (Map.Entry<DayOfWeek, Integer> entry : dailyDifficultyMap.entrySet()) {
-            if (entry.getValue() >= 9) { // High difficulty threshold
+            if (entry.getValue() >= 9) {
                 score -= 10.0;
                 insights.add("Heavy workload on " + entry.getKey());
             }
         }
 
-        // Positive insights for the UI
-        if (!earlyMorningFound && prefs.getAvoidEarlyMorning()) {
+        if (!earlyMorningFound && Boolean.TRUE.equals(prefs.getAvoidEarlyMorning())) {
             insights.add("No early morning classes! Perfect for you.");
         }
 

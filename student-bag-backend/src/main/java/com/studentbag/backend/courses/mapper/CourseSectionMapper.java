@@ -37,11 +37,21 @@ public class CourseSectionMapper {
         return CourseSectionResponseDTO.builder()
                 .id(section.getId())
                 .externalId(section.getExternalId())
-                .courseId(section.getCourse().getId())
-                .termId(section.getTerm().getId())
+                .courseId(section.getCourse() != null ? section.getCourse().getId() : null)
+                .termId(section.getTerm() != null ? section.getTerm().getId() : null)
                 .sectionNumber(section.getSectionNumber())
                 .sectionType(section.getSectionType())
                 .instructorId(section.getInstructor() != null ? section.getInstructor().getId() : null)
+                .instructorNameArabic(
+                        section.getInstructor() != null
+                                ? section.getInstructor().getFullNameArabic()
+                                : null
+                )
+                .instructorNameEnglish(
+                        section.getInstructor() != null
+                                ? section.getInstructor().getFullNameEnglish()
+                                : null
+                )
                 .parentLectureSectionId(
                         section.getParentLectureSection() != null
                                 ? section.getParentLectureSection().getId()

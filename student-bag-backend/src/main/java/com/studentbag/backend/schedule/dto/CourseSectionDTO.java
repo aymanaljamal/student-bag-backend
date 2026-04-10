@@ -11,4 +11,5 @@ public class CourseSectionDTO {
     private String sectionNumber;
     private String instructorName;
     private List<ClassSessionDTO> sessions;
+    
 }

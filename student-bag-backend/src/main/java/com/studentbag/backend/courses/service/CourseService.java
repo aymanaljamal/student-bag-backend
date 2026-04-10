@@ -1,6 +1,7 @@
 package com.studentbag.backend.courses.service;
 
 import com.studentbag.backend.courses.dto.request.CourseRequestDTO;
+import com.studentbag.backend.courses.dto.response.CourseDetailedResponseDTO;
 import com.studentbag.backend.courses.dto.response.CourseResponseDTO;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,7 +17,7 @@ public interface CourseService {
      * Create new course
      */
     CourseResponseDTO create(CourseRequestDTO request);
-
+    List<CourseDetailedResponseDTO> getAllCoursesDetailed();
     /**
      * Update existing course
      */
