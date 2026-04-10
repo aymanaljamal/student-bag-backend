@@ -7,12 +7,14 @@ import com.studentbag.backend.student.entity.Student;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
 @Entity
 @Table(name = "student_schedules")
-@Getter @Setter
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -31,11 +33,13 @@ public class StudentSchedule extends BaseEntity {
     @Column(nullable = false)
     private ScheduleStatus status = ScheduleStatus.DRAFT;
 
+    @Column(name = "activated_at")
+    private LocalDateTime activatedAt;
+
     @Builder.Default
     @OneToMany(mappedBy = "schedule", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<ScheduleEntry> entries = new ArrayList<>();
 
-    // Helper method لضمان الربط الصحيح من الجهتين
     public void addEntry(ScheduleEntry entry) {
         entries.add(entry);
         entry.setSchedule(this);

@@ -32,13 +32,17 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
             throw new RuntimeException("Unauthorized: Ownership mismatch");
         }
 
-        // Archive previous active schedules for the same term
         List<StudentSchedule> activeSchedules = scheduleRepository
-                .findAllByStudentIdAndTermIdAndStatus(studentId, schedule.getTerm().getId(), ScheduleStatus.ACTIVE);
+                .findAllByStudentIdAndTermIdAndStatus(
+                        studentId,
+                        schedule.getTerm().getId(),
+                        ScheduleStatus.ACTIVE
+                );
 
         activeSchedules.forEach(s -> s.setStatus(ScheduleStatus.ARCHIVED));
 
         schedule.setStatus(ScheduleStatus.ACTIVE);
+
         scheduleRepository.saveAll(activeSchedules);
         scheduleRepository.save(schedule);
     }
@@ -46,7 +50,6 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
     @Override
     @Transactional(readOnly = true)
     public List<StudentScheduleResponseDTO> getStudentSchedules(Long studentId) {
-        // Implementation now correctly matches the Interface return type
         return scheduleRepository.findAllByStudentId(studentId).stream()
                 .map(scheduleMapper::toResponseDTO)
                 .collect(Collectors.toList());
@@ -58,7 +61,6 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
         StudentSchedule schedule = scheduleRepository.findById(scheduleId)
                 .orElseThrow(() -> new RuntimeException("Schedule not found"));
 
-        // Critical Security Check: Ensure the student owns the record they are deleting
         if (!schedule.getStudent().getId().equals(studentId)) {
             throw new RuntimeException("Unauthorized delete attempt");
         }

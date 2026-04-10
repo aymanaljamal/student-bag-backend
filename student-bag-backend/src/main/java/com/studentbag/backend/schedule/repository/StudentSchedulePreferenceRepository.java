@@ -9,4 +9,5 @@ import java.util.Optional;
 @Repository
 public interface StudentSchedulePreferenceRepository extends JpaRepository<StudentSchedulePreference, Long> {
     Optional<StudentSchedulePreference> findByStudentId(Long studentId);
+    
 }

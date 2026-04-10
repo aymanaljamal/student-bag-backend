@@ -1,9 +1,16 @@
 package com.studentbag.backend.schedule.service;
+
 import com.studentbag.backend.courses.entity.CourseSection;
 import com.studentbag.backend.schedule.dto.response.ScheduleOptionResponseDTO;
 
 import java.util.List;
+import java.util.Map;
 
 public interface PreferenceRankingService {
-    List<ScheduleOptionResponseDTO> rankAndScore(List<List<CourseSection>> options, Long studentId);
+
+    List<ScheduleOptionResponseDTO> rankAndScore(
+            List<List<CourseSection>> options,
+            Long studentId,
+            Map<Long, Integer> courseRatings
+    );
 }

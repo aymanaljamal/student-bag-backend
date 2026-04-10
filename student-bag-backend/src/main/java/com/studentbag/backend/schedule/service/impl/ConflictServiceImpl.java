@@ -9,64 +9,87 @@ import org.springframework.util.CollectionUtils;
 
 import java.util.List;
 
-/**
- * Implementation of the ConflictService.
- * Handles time-overlap calculations for academic schedules.
- */
 @Slf4j
 @Service
 public class ConflictServiceImpl implements ConflictService {
 
-    /**
-     * FR-4.3: Checks if two class sessions overlap in time.
-     * Uses the interval overlap formula: (StartA < EndB) AND (StartB < EndA)
-     */
     @Override
     public boolean isOverlap(ClassSession s1, ClassSession s2) {
-        // 1. Null Safety check
-        if (s1 == null || s2 == null) return false;
+        if (s1 == null || s2 == null) {
+            return false;
+        }
 
-        // 2. Different days cannot have time conflicts
-        if (s1.getDayOfWeek() != s2.getDayOfWeek()) return false;
+        if (s1.getDayOfWeek() == null || s2.getDayOfWeek() == null) {
+            log.warn("Cannot compare overlap because one session has null dayOfWeek. s1={}, s2={}", s1, s2);
+            return false;
+        }
 
-        // 3. Mathematical overlap logic
+        if (s1.getStartTime() == null || s1.getEndTime() == null ||
+                s2.getStartTime() == null || s2.getEndTime() == null) {
+            log.warn("Cannot compare overlap because one session has null time. s1={}, s2={}", s1, s2);
+            return false;
+        }
+
+        if (!s1.getDayOfWeek().equals(s2.getDayOfWeek())) {
+            return false;
+        }
+
         return s1.getStartTime().isBefore(s2.getEndTime()) &&
                 s2.getStartTime().isBefore(s1.getEndTime());
     }
 
-    /**
-     * Checks if a new section conflicts with a list of already selected sections.
-     */
     @Override
     public boolean hasConflict(CourseSection newSection, List<CourseSection> currentPicks) {
-        // 1. Early exit if data is missing
         if (newSection == null || CollectionUtils.isEmpty(currentPicks)) {
             return false;
         }
 
-        // 2. Ensure the new section actually has sessions to check
         if (CollectionUtils.isEmpty(newSection.getClassSessions())) {
-            log.warn("Section {} has no sessions defined.", newSection.getId());
+            log.warn("New section {} has no class sessions defined.", newSection.getId());
             return false;
         }
 
-        // 3. Iterate and compare sessions
         for (CourseSection existingSection : currentPicks) {
-            // Optimization: Skip if comparing the same section
+            if (existingSection == null) {
+                continue;
+            }
+
             if (existingSection.getId() != null && existingSection.getId().equals(newSection.getId())) {
+                continue;
+            }
+
+            if (CollectionUtils.isEmpty(existingSection.getClassSessions())) {
+                log.warn("Existing section {} has no class sessions defined.", existingSection.getId());
                 continue;
             }
 
             for (ClassSession sessionA : newSection.getClassSessions()) {
                 for (ClassSession sessionB : existingSection.getClassSessions()) {
+                    log.debug(
+                            "Comparing section {} [{} {}-{}] with section {} [{} {}-{}]",
+                            newSection.getId(),
+                            sessionA != null ? sessionA.getDayOfWeek() : null,
+                            sessionA != null ? sessionA.getStartTime() : null,
+                            sessionA != null ? sessionA.getEndTime() : null,
+                            existingSection.getId(),
+                            sessionB != null ? sessionB.getDayOfWeek() : null,
+                            sessionB != null ? sessionB.getStartTime() : null,
+                            sessionB != null ? sessionB.getEndTime() : null
+                    );
+
                     if (isOverlap(sessionA, sessionB)) {
-                        log.info("Schedule Conflict: Section {} overlaps with {} on {}",
-                                newSection.getId(), existingSection.getId(), sessionA.getDayOfWeek());
+                        log.info(
+                                "Schedule conflict found: section {} overlaps with section {} on {}",
+                                newSection.getId(),
+                                existingSection.getId(),
+                                sessionA.getDayOfWeek()
+                        );
                         return true;
                     }
                 }
             }
         }
+
         return false;
     }
 }
