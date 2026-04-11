@@ -1,15 +1,19 @@
 package com.studentbag.backend.events.dto.request;
 
 import com.studentbag.backend.domain.enums.EventType;
-import com.studentbag.backend.events.dto.OpportunityDetailsDTO;
-import jakarta.validation.constraints.*;
+import com.studentbag.backend.events.dto.response.OpportunityDetailsDTO;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.*;
+
 import java.time.LocalDateTime;
 
-@Data
-@Builder
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class EventRequestDTO {
 
     @NotBlank(message = "Title is required")
@@ -20,7 +24,6 @@ public class EventRequestDTO {
     @NotNull(message = "Event type is required")
     private EventType eventType;
 
-    private String imageUrl;
     @NotNull(message = "Start date/time is required")
     private LocalDateTime startDateTime;
 
@@ -28,13 +31,21 @@ public class EventRequestDTO {
     private LocalDateTime endDateTime;
 
     private String location;
+
     private String department;
+
     private String host;
 
-    private Boolean requiresRegistration;
+    private String imageUrl;
+
+    @Builder.Default
+    private Boolean requiresRegistration = false;
+
     private Integer maxParticipants;
 
-    // FR-9.6: إذا كان الحدث "Opportunity" بنعبي هاي البيانات
-    private Boolean isOpportunity;
+    @Builder.Default
+    private Boolean isOpportunity = false;
+
+    @Valid
     private OpportunityDetailsDTO opportunityDetails;
 }

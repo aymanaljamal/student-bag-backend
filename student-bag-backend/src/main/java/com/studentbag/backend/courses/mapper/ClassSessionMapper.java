@@ -6,15 +6,9 @@ import com.studentbag.backend.courses.entity.ClassSession;
 import com.studentbag.backend.courses.entity.CourseSection;
 import org.springframework.stereotype.Component;
 
-/**
- * Mapper for converting between ClassSession entity and DTOs
- */
 @Component
 public class ClassSessionMapper {
 
-    /**
-     * Convert Request DTO to Entity
-     */
     public void toEntity(ClassSessionRequestDTO request, ClassSession session, CourseSection section) {
         session.setCourseSection(section);
         session.setDayOfWeek(request.getDayOfWeek());
@@ -26,13 +20,17 @@ public class ClassSessionMapper {
         session.setIsOnline(request.getIsOnline());
     }
 
-    /**
-     * Convert Entity to Response DTO
-     */
     public ClassSessionResponseDTO toResponse(ClassSession session) {
+        if (session == null) {
+            return null;
+        }
+
+        CourseSection sourceSection = session.getCourseSection();
+        boolean isLab = sourceSection != null && sourceSection.getParentLectureSection() != null;
+
         return ClassSessionResponseDTO.builder()
                 .id(session.getId())
-                .courseSectionId(session.getCourseSection().getId())
+                .courseSectionId(sourceSection != null ? sourceSection.getId() : null)
                 .dayOfWeek(session.getDayOfWeek())
                 .startTime(session.getStartTime())
                 .endTime(session.getEndTime())
@@ -41,6 +39,20 @@ public class ClassSessionMapper {
                 .campus(session.getCampus())
                 .isOnline(session.getIsOnline())
                 .durationMinutes(session.getDurationMinutes())
+
+                .isLab(isLab)
+                .sourceSectionId(sourceSection != null ? sourceSection.getId() : null)
+                .sourceSectionNumber(sourceSection != null ? sourceSection.getSectionNumber() : null)
+                .sourceSectionType(
+                        sourceSection != null && sourceSection.getSectionType() != null
+                                ? sourceSection.getSectionType().name()
+                                : null
+                )
+                .parentLectureSectionId(
+                        sourceSection != null && sourceSection.getParentLectureSection() != null
+                                ? sourceSection.getParentLectureSection().getId()
+                                : null
+                )
                 .build();
     }
 }

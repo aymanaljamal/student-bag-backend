@@ -1,9 +1,14 @@
 package com.studentbag.backend.events.service.impl;
 
+import com.studentbag.backend.common.exception.ResourceNotFoundException;
+import com.studentbag.backend.events.dto.request.EventRegistrationRequestDTO;
 import com.studentbag.backend.events.dto.request.EventRequestDTO;
+import com.studentbag.backend.events.dto.request.EventSearchRequestDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;
+import com.studentbag.backend.events.dto.response.OpportunityResponseDTO;
 import com.studentbag.backend.events.entity.Event;
 import com.studentbag.backend.events.entity.EventRegistration;
+import com.studentbag.backend.events.entity.Opportunity;
 import com.studentbag.backend.events.mapper.EventMapper;
 import com.studentbag.backend.events.repository.EventRegistrationRepository;
 import com.studentbag.backend.events.repository.EventRepository;
@@ -17,16 +22,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Objects;
 
-/**
- * Service implementation for managing University Events and Opportunities.
- * Handles event creation, registration logic, and data enrichment for students.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class EventServiceImpl implements EventService {
 
     private final EventRepository eventRepository;
@@ -36,71 +41,90 @@ public class EventServiceImpl implements EventService {
     private final EventMapper eventMapper;
 
     @Override
-    @Transactional
     public EventResponseDTO createEvent(EventRequestDTO request, Long institutionId) {
-        log.info("Creating new event: {} for institution ID: {}", request.getTitle(), institutionId);
+        validateEventDates(request);
 
-        // Fetch institution to ensure the event is linked correctly (Required by Entity constraints)
-        Institution institution = institutionRepository.findById(institutionId)
-                .orElseThrow(() -> new RuntimeException("Institution not found with ID: " + institutionId));
+        Institution institution = getInstitutionById(institutionId);
 
-        Event event = Event.builder()
-                .institution(institution)
-                .title(request.getTitle())
-                .description(request.getDescription())
-                .eventType(request.getEventType())
-                .startDateTime(request.getStartDateTime())
-                .endDateTime(request.getEndDateTime())
-                .location(request.getLocation())
-                .department(request.getDepartment())
-                .host(request.getHost())
-                .imageUrl(request.getImageUrl())
-                .requiresRegistration(request.getRequiresRegistration())
-                .maxParticipants(request.getMaxParticipants())
-                .isOpportunity(request.getIsOpportunity())
-                .build();
+        Event event = eventMapper.toEntity(request);
+        event.setInstitution(institution);
 
-        // Handle Opportunity details if the event is a career/training opportunity
-        if (Boolean.TRUE.equals(request.getIsOpportunity()) && request.getOpportunityDetails() != null) {
-            event.setOpportunity(eventMapper.toOpportunityEntity(request.getOpportunityDetails(), event));
-        }
+        applyOpportunityDetails(event, request);
 
         Event savedEvent = eventRepository.save(event);
-        log.info("Event successfully created with ID: {}", savedEvent.getId());
 
-        return eventMapper.toResponseDTO(savedEvent, null);
+        log.info("Created event with id={} for institutionId={}", savedEvent.getId(), institutionId);
+        return buildEventResponse(savedEvent, null);
+    }
+
+    @Override
+    public EventResponseDTO updateEvent(Long eventId, EventRequestDTO request, Long institutionId) {
+        validateEventDates(request);
+
+        Event existingEvent = getEventByIdOrThrow(eventId);
+        Institution institution = getInstitutionById(institutionId);
+
+        eventMapper.updateEntity(existingEvent, request);
+        existingEvent.setInstitution(institution);
+
+        applyOpportunityDetails(existingEvent, request);
+
+        Event savedEvent = eventRepository.save(existingEvent);
+
+        log.info("Updated event with id={}", savedEvent.getId());
+        return buildEventResponse(savedEvent, null);
     }
 
     @Override
     @Transactional(readOnly = true)
     public EventResponseDTO getEventById(Long eventId, Long studentId) {
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new RuntimeException("Event not found with ID: " + eventId));
-
-        return enrichWithRegistrationStatus(event, studentId);
+        Event event = getEventByIdOrThrow(eventId);
+        return buildEventResponse(event, studentId);
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
+    public List<EventResponseDTO> getAllEvents(Long studentId) {
+        return eventRepository.findAll().stream()
+                .sorted(Comparator.comparing(Event::getStartDateTime, Comparator.nullsLast(LocalDateTime::compareTo)))
+                .map(event -> buildEventResponse(event, studentId))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<EventResponseDTO> searchEvents(Long studentId, EventSearchRequestDTO request) {
+        return eventRepository.findAll().stream()
+                .filter(event -> matchesSearch(event, request))
+                .sorted(buildComparator(request))
+                .map(event -> buildEventResponse(event, studentId))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OpportunityResponseDTO> searchOpportunities(Long studentId, EventSearchRequestDTO request) {
+        return eventRepository.findAll().stream()
+                .filter(event -> Boolean.TRUE.equals(event.getIsOpportunity()))
+                .filter(event -> matchesSearch(event, request))
+                .sorted(buildComparator(request))
+                .map(Event::getOpportunity)
+                .filter(Objects::nonNull)
+                .map(eventMapper::toOpportunityResponseDTO)
+                .toList();
+    }
+
+    @Override
     public void registerForEvent(Long eventId, Long studentId) {
-        log.info("Registering student ID: {} for event ID: {}", studentId, eventId);
+        registerForEvent(eventId, studentId, null);
+    }
 
-        Event event = eventRepository.findById(eventId)
-                .orElseThrow(() -> new RuntimeException("Event not found"));
+    @Override
+    public void registerForEvent(Long eventId, Long studentId, EventRegistrationRequestDTO request) {
+        Event event = getEventByIdOrThrow(eventId);
+        Student student = getStudentById(studentId);
 
-        Student student = studentRepository.findById(studentId)
-                .orElseThrow(() -> new RuntimeException("Student not found"));
-
-        // Business Logic: Check capacity (FR-9.4)
-        if (!event.hasCapacity()) {
-            log.warn("Registration failed: Event {} is at full capacity", eventId);
-            throw new RuntimeException("Event is already at full capacity!");
-        }
-
-        // Business Logic: Prevent duplicate registrations
-        if (registrationRepository.findByEventIdAndStudentId(eventId, studentId).isPresent()) {
-            throw new RuntimeException("Student is already registered for this event.");
-        }
+        validateRegistration(event, studentId);
 
         EventRegistration registration = EventRegistration.builder()
                 .event(event)
@@ -110,63 +134,252 @@ public class EventServiceImpl implements EventService {
         registration.register();
         registrationRepository.save(registration);
 
-        log.info("Successfully registered student {} for event {}", studentId, eventId);
+        log.info("Student {} registered for event {}", studentId, eventId);
     }
 
     @Override
-    @Transactional
     public void cancelRegistration(Long eventId, Long studentId) {
-        log.info("Cancelling registration for student ID: {} on event ID: {}", studentId, eventId);
+        EventRegistration registration = registrationRepository.findByEventIdAndStudentId(eventId, studentId)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Registration not found for event id: " + eventId + " and student id: " + studentId
+                ));
 
-        EventRegistration reg = registrationRepository.findByEventIdAndStudentId(eventId, studentId)
-                .orElseThrow(() -> new RuntimeException("Registration record not found for student " + studentId));
+        registration.cancel();
+        registrationRepository.save(registration);
 
-        reg.cancel();
-        registrationRepository.save(reg);
+        log.info("Student {} cancelled registration for event {}", studentId, eventId);
     }
 
     @Override
     public void syncWithUniversityAPI(Long institutionId) {
-        // FR-9.2 & FR-9.7: External API synchronization logic placeholder
-        log.info("Initiating university API sync for institution {}", institutionId);
+        log.info("Sync with university API requested for institutionId={}", institutionId);
     }
 
-    /**
-     * Helper method to map an Event entity to a Response DTO and inject
-     * the specific registration status for the requesting student.
-     */
-    private EventResponseDTO enrichWithRegistrationStatus(Event event, Long studentId) {
-        EventResponseDTO dto = eventMapper.toResponseDTO(event, studentId);
+    // -------------------------------------------------------------------------
+    // Internal helpers
+    // -------------------------------------------------------------------------
+
+    private Institution getInstitutionById(Long institutionId) {
+        return institutionRepository.findById(institutionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Institution not found with id: " + institutionId));
+    }
+
+    private Student getStudentById(Long studentId) {
+        return studentRepository.findById(studentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Student not found with id: " + studentId));
+    }
+
+    private Event getEventByIdOrThrow(Long eventId) {
+        return eventRepository.findById(eventId)
+                .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
+    }
+
+    private void validateEventDates(EventRequestDTO request) {
+        if (request.getStartDateTime() != null
+                && request.getEndDateTime() != null
+                && request.getEndDateTime().isBefore(request.getStartDateTime())) {
+            throw new IllegalArgumentException("End date/time must be after start date/time");
+        }
+    }
+
+    private void applyOpportunityDetails(Event event, EventRequestDTO request) {
+        if (Boolean.TRUE.equals(request.getIsOpportunity()) && request.getOpportunityDetails() != null) {
+            event.setOpportunity(eventMapper.toOpportunityEntity(request.getOpportunityDetails(), event));
+            return;
+        }
+
+        event.setOpportunity(null);
+    }
+
+    private EventResponseDTO buildEventResponse(Event event, Long studentId) {
+        EventResponseDTO response = eventMapper.toResponseDTO(event, studentId);
+
+        if (studentId == null) {
+            return response;
+        }
 
         registrationRepository.findByEventIdAndStudentId(event.getId(), studentId)
-                .ifPresent(reg -> {
-                    dto.setIsUserRegistered(true);
-                    dto.setRegistrationStatus(reg.getStatus().name());
-                });
+                .ifPresent(registration -> eventMapper.applyRegistrationInfo(response, registration));
 
-        return dto;
+        return response;
     }
-    @Override
-    @Transactional(readOnly = true)
-    public List<EventResponseDTO> getAllEvents(Long studentId) {
-        log.info("Fetching all events. Student context: {}", studentId != null ? studentId : "Guest");
 
-        return eventRepository.findAll().stream()
-                .map(event -> {
-                    EventResponseDTO dto = eventMapper.toResponseDTO(event, studentId);
+    private void validateRegistration(Event event, Long studentId) {
+        if (Boolean.FALSE.equals(event.getRequiresRegistration())) {
+            throw new IllegalStateException("This event does not require registration");
+        }
 
-                    if (studentId != null) {
-                        registrationRepository.findByEventIdAndStudentId(event.getId(), studentId)
-                                .ifPresent(reg -> {
-                                    dto.setIsUserRegistered(true);
-                                    dto.setRegistrationStatus(reg.getStatus().name());
-                                });
-                    } else {
-                        dto.setIsUserRegistered(false);
-                        dto.setRegistrationStatus(null);
-                    }
-                    return dto;
-                })
-                .collect(Collectors.toList());
+        if (!event.hasCapacity()) {
+            throw new IllegalStateException("Event is already at full capacity");
+        }
+
+        if (registrationRepository.findByEventIdAndStudentId(event.getId(), studentId).isPresent()) {
+            throw new IllegalStateException("Student is already registered for this event");
+        }
+    }
+
+    private boolean matchesSearch(Event event, EventSearchRequestDTO request) {
+        if (request == null) {
+            return true;
+        }
+
+        Opportunity opportunity = event.getOpportunity();
+
+        boolean queryMatches =
+                isBlank(request.getQuery())
+                        || containsIgnoreCase(event.getTitle(), request.getQuery())
+                        || containsIgnoreCase(event.getDescription(), request.getQuery())
+                        || containsIgnoreCase(event.getLocation(), request.getQuery())
+                        || containsIgnoreCase(event.getDepartment(), request.getQuery())
+                        || containsIgnoreCase(event.getHost(), request.getQuery())
+                        || (opportunity != null && (
+                        containsIgnoreCase(opportunity.getCompanyName(), request.getQuery())
+                                || containsIgnoreCase(opportunity.getRoleTitle(), request.getQuery())
+                                || containsIgnoreCase(opportunity.getField(), request.getQuery())
+                ));
+
+        boolean eventTypeMatches =
+                request.getEventType() == null || request.getEventType() == event.getEventType();
+
+        boolean upcomingMatches =
+                request.getUpcomingOnly() == null
+                        || !request.getUpcomingOnly()
+                        || event.isUpcoming();
+
+        boolean registrationMatches =
+                request.getRequiresRegistration() == null
+                        || Objects.equals(event.getRequiresRegistration(), request.getRequiresRegistration());
+
+        boolean opportunityMatches =
+                request.getIsOpportunity() == null
+                        || Objects.equals(event.getIsOpportunity(), request.getIsOpportunity());
+
+        boolean departmentMatches =
+                isBlank(request.getDepartment())
+                        || containsIgnoreCase(event.getDepartment(), request.getDepartment());
+
+        boolean hostMatches =
+                isBlank(request.getHost())
+                        || containsIgnoreCase(event.getHost(), request.getHost());
+
+        boolean startDateMatches = matchesStartDateRange(event, request);
+        boolean opportunityMatchesExtra = matchesOpportunityFilters(opportunity, request);
+
+        return queryMatches
+                && eventTypeMatches
+                && upcomingMatches
+                && registrationMatches
+                && opportunityMatches
+                && departmentMatches
+                && hostMatches
+                && startDateMatches
+                && opportunityMatchesExtra;
+    }
+
+    private boolean matchesStartDateRange(Event event, EventSearchRequestDTO request) {
+        if (event.getStartDateTime() == null) {
+            return request.getStartDateFrom() == null && request.getStartDateTo() == null;
+        }
+
+        LocalDate startDate = event.getStartDateTime().toLocalDate();
+
+        boolean fromMatches =
+                request.getStartDateFrom() == null || !startDate.isBefore(request.getStartDateFrom());
+
+        boolean toMatches =
+                request.getStartDateTo() == null || !startDate.isAfter(request.getStartDateTo());
+
+        return fromMatches && toMatches;
+    }
+
+    private boolean matchesOpportunityFilters(Opportunity opportunity, EventSearchRequestDTO request) {
+        if (opportunity == null) {
+            return request.getApplicationOpenOnly() == null
+                    && request.getPaidOnly() == null
+                    && isBlank(request.getWorkMode())
+                    && request.getApplicationDeadlineFrom() == null
+                    && request.getApplicationDeadlineTo() == null;
+        }
+
+        boolean appOpenMatches =
+                request.getApplicationOpenOnly() == null
+                        || !request.getApplicationOpenOnly()
+                        || opportunity.isApplicationOpen();
+
+        boolean paidMatches =
+                request.getPaidOnly() == null
+                        || !request.getPaidOnly()
+                        || Boolean.TRUE.equals(opportunity.getIsPaid());
+
+        boolean workModeMatches =
+                isBlank(request.getWorkMode())
+                        || containsIgnoreCase(opportunity.getWorkMode(), request.getWorkMode());
+
+        boolean deadlineMatches = matchesApplicationDeadlineRange(opportunity, request);
+
+        return appOpenMatches && paidMatches && workModeMatches && deadlineMatches;
+    }
+
+    private boolean matchesApplicationDeadlineRange(Opportunity opportunity, EventSearchRequestDTO request) {
+        if (opportunity.getApplicationDeadline() == null) {
+            return request.getApplicationDeadlineFrom() == null
+                    && request.getApplicationDeadlineTo() == null;
+        }
+
+        LocalDate deadline = opportunity.getApplicationDeadline();
+
+        boolean fromMatches =
+                request.getApplicationDeadlineFrom() == null
+                        || !deadline.isBefore(request.getApplicationDeadlineFrom());
+
+        boolean toMatches =
+                request.getApplicationDeadlineTo() == null
+                        || !deadline.isAfter(request.getApplicationDeadlineTo());
+
+        return fromMatches && toMatches;
+    }
+
+    private Comparator<Event> buildComparator(EventSearchRequestDTO request) {
+        String sortBy = request != null ? request.getSortBy() : null;
+        String sortDirection = request != null ? request.getSortDirection() : null;
+
+        Comparator<Event> comparator;
+
+        String normalizedSortBy = isBlank(sortBy) ? "startDateTime" : sortBy.trim().toLowerCase();
+
+        switch (normalizedSortBy) {
+            case "title" -> comparator = Comparator.comparing(
+                    Event::getTitle,
+                    Comparator.nullsLast(String::compareToIgnoreCase)
+            );
+            case "createdat" -> comparator = Comparator.comparing(
+                    Event::getCreatedAt,
+                    Comparator.nullsLast(LocalDateTime::compareTo)
+            );
+            case "applicationdeadline" -> comparator = Comparator.comparing(
+                    event -> event.getOpportunity() != null ? event.getOpportunity().getApplicationDeadline() : null,
+                    Comparator.nullsLast(LocalDate::compareTo)
+            );
+            default -> comparator = Comparator.comparing(
+                    Event::getStartDateTime,
+                    Comparator.nullsLast(LocalDateTime::compareTo)
+            );
+        }
+
+        if ("desc".equalsIgnoreCase(sortDirection)) {
+            comparator = comparator.reversed();
+        }
+
+        return comparator;
+    }
+
+    private boolean containsIgnoreCase(String value, String query) {
+        return value != null
+                && query != null
+                && value.toLowerCase().contains(query.trim().toLowerCase());
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }

@@ -1,41 +1,95 @@
 package com.studentbag.backend.schedule.controller;
 
-import com.studentbag.backend.schedule.dto.response.StudentScheduleResponseDTO;
+import com.studentbag.backend.schedule.dto.request.UpdateScheduleRequest;
+import com.studentbag.backend.schedule.dto.response.StudentScheduleViewerResponseDTO;
+import com.studentbag.backend.schedule.dto.response.UpdateScheduleResponseDTO;
 import com.studentbag.backend.schedule.service.ScheduleManagementService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import com.studentbag.backend.schedule.service.ScheduleViewerService;
+import com.studentbag.backend.student.entity.Student;
+import com.studentbag.backend.student.repository.StudentRepository;
+import com.studentbag.backend.users.entity.User;
+import com.studentbag.backend.users.repository.UserRepository;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/schedules/management")
+@RequestMapping("/api/schedules")
 @RequiredArgsConstructor
-@Tag(name = "Schedule Management", description = "Endpoints for managing active and saved student schedules")
 public class ScheduleManagementController {
 
     private final ScheduleManagementService managementService;
+    private final ScheduleViewerService viewerService;
+    private final UserRepository userRepository;
+    private final StudentRepository studentRepository;
 
-    @GetMapping("/student/{studentId}")
-    @Operation(summary = "Get all schedules for a student", description = "Returns active and archived schedules.")
-    public ResponseEntity<List<StudentScheduleResponseDTO>> getMySchedules(@PathVariable Long studentId) {
-        return ResponseEntity.ok(managementService.getStudentSchedules(studentId));
+    private Long getCurrentStudentId(UserDetails userDetails) {
+        String email = userDetails.getUsername();
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found: " + email));
+
+        UUID userId = user.getId();
+
+        Student student = studentRepository.findByUserId(userId)
+                .orElseThrow(() -> new RuntimeException("Student not found for user id: " + userId));
+
+        return student.getId();
     }
 
-    @PutMapping("/{scheduleId}/activate")
-    @Operation(summary = "Activate a specific schedule",
-            description = "Sets one schedule to ACTIVE and archives all others for the same term (FR-4.8).")
-    public ResponseEntity<Void> activate(@PathVariable Long scheduleId, @RequestParam Long studentId) {
+    @GetMapping("/viewer")
+    public ResponseEntity<List<StudentScheduleViewerResponseDTO>> getAll(
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        Long studentId = getCurrentStudentId(userDetails);
+        return ResponseEntity.ok(viewerService.getStudentSchedulesViewer(studentId));
+    }
+
+    @PostMapping("/{scheduleId}/activate")
+    public ResponseEntity<StudentScheduleViewerResponseDTO> activate(
+            @PathVariable Long scheduleId,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        Long studentId = getCurrentStudentId(userDetails);
         managementService.activateSchedule(scheduleId, studentId);
+        return ResponseEntity.ok(viewerService.getScheduleViewer(scheduleId, studentId));
+    }
+
+    @PostMapping("/{scheduleId}/archive")
+    public ResponseEntity<Void> archive(
+            @PathVariable Long scheduleId,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        Long studentId = getCurrentStudentId(userDetails);
+        managementService.archiveSchedule(scheduleId, studentId);
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/{scheduleId}")
-    @Operation(summary = "Delete a schedule", description = "Permanently removes a saved schedule.")
-    public ResponseEntity<Void> delete(@PathVariable Long scheduleId, @RequestParam Long studentId) {
+    public ResponseEntity<Void> delete(
+            @PathVariable Long scheduleId,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        Long studentId = getCurrentStudentId(userDetails);
         managementService.deleteSchedule(scheduleId, studentId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{scheduleId}/entries")
+    public ResponseEntity<UpdateScheduleResponseDTO> updateEntries(
+            @PathVariable Long scheduleId,
+            @AuthenticationPrincipal UserDetails userDetails,
+            @Valid @RequestBody UpdateScheduleRequest request
+    ) {
+        Long studentId = getCurrentStudentId(userDetails);
+        return ResponseEntity.ok(
+                managementService.updateScheduleEntries(scheduleId, studentId, request)
+        );
     }
 }

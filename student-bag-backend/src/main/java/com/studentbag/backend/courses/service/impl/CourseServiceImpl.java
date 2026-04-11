@@ -1,7 +1,8 @@
 package com.studentbag.backend.courses.service.impl;
-import com.studentbag.backend.courses.dto.response.*;
+
 import com.studentbag.backend.courses.dto.CourseSectionDetailedDTO;
 import com.studentbag.backend.courses.dto.request.CourseRequestDTO;
+import com.studentbag.backend.courses.dto.response.ClassSessionResponseDTO;
 import com.studentbag.backend.courses.dto.response.CourseDetailedResponseDTO;
 import com.studentbag.backend.courses.dto.response.CourseResponseDTO;
 import com.studentbag.backend.courses.entity.ClassSession;
@@ -21,11 +22,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
-/**
- * Implementation of CourseService with advanced search and optional sections
- */
 @Service
 @RequiredArgsConstructor
 public class CourseServiceImpl implements CourseService {
@@ -37,7 +36,6 @@ public class CourseServiceImpl implements CourseService {
 
     @Override
     public CourseResponseDTO create(CourseRequestDTO request) {
-
         Institution institution = institutionRepository.findById(request.getInstitutionId())
                 .orElseThrow(() -> new EntityNotFoundException("Institution not found"));
 
@@ -55,7 +53,6 @@ public class CourseServiceImpl implements CourseService {
 
     @Override
     public CourseResponseDTO update(Long id, CourseRequestDTO request) {
-
         Course course = courseRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Course not found"));
 
@@ -121,6 +118,8 @@ public class CourseServiceImpl implements CourseService {
     }
 
     private CourseDetailedResponseDTO mapCourseDetailed(Course course) {
+        List<CourseSectionDetailedDTO> detailedSections = buildDisplayedSections(course);
+
         return CourseDetailedResponseDTO.builder()
                 .id(course.getId())
                 .externalId(course.getExternalId())
@@ -135,13 +134,66 @@ public class CourseServiceImpl implements CourseService {
                 .institutionId(course.getInstitution() != null ? course.getInstitution().getId() : null)
                 .departmentId(course.getDepartment() != null ? course.getDepartment().getId() : null)
                 .isActive(course.getIsActive())
-                .sections(course.getSections() == null
-                        ? List.of()
-                        : course.getSections().stream().map(this::mapSectionDetailed).toList())
+                .sections(detailedSections)
                 .build();
     }
 
-    private CourseSectionDetailedDTO mapSectionDetailed(CourseSection section) {
+    /**
+     * Display only main/lecture sections.
+     * Any child section (lab) that has parentLectureSection is merged into
+     * the parent as additional class sessions.
+     */
+    private List<CourseSectionDetailedDTO> buildDisplayedSections(Course course) {
+        if (course.getSections() == null || course.getSections().isEmpty()) {
+            return List.of();
+        }
+
+        List<CourseSection> allSections = course.getSections();
+
+        Map<Long, List<CourseSection>> childSectionsByParentId = allSections.stream()
+                .filter(Objects::nonNull)
+                .filter(section -> section.getParentLectureSection() != null)
+                .collect(Collectors.groupingBy(section -> section.getParentLectureSection().getId()));
+
+        return allSections.stream()
+                .filter(Objects::nonNull)
+                .filter(section -> section.getParentLectureSection() == null) // only main sections
+                .map(section -> mapSectionDetailed(section, childSectionsByParentId.get(section.getId())))
+                .toList();
+    }
+
+    private CourseSectionDetailedDTO mapSectionDetailed(
+            CourseSection section,
+            List<CourseSection> childSections
+    ) {
+        List<ClassSessionResponseDTO> mergedSessions = new ArrayList<>();
+
+        // Main section sessions
+        if (section.getClassSessions() != null) {
+            mergedSessions.addAll(
+                    section.getClassSessions().stream()
+                            .filter(Objects::nonNull)
+                            .map(session -> mapSession(session, false, null))
+                            .toList()
+            );
+        }
+
+        // Child/Lab section sessions -> expose them as sessions under parent
+        if (childSections != null && !childSections.isEmpty()) {
+            for (CourseSection childSection : childSections) {
+                if (childSection.getClassSessions() == null) {
+                    continue;
+                }
+
+                mergedSessions.addAll(
+                        childSection.getClassSessions().stream()
+                                .filter(Objects::nonNull)
+                                .map(session -> mapSession(session, true, childSection))
+                                .toList()
+                );
+            }
+        }
+
         return CourseSectionDetailedDTO.builder()
                 .id(section.getId())
                 .externalId(section.getExternalId())
@@ -155,30 +207,46 @@ public class CourseServiceImpl implements CourseService {
                                 ? section.getInstructor().getUser().getFullName()
                                 : null
                 )
-                .instructorNameArabic(section.getInstructor().getFullNameArabic())
-                .instructorNameEnglish(section.getInstructor().getFullNameEnglish())
+                .instructorNameArabic(
+                        section.getInstructor() != null ? section.getInstructor().getFullNameArabic() : null
+                )
+                .instructorNameEnglish(
+                        section.getInstructor() != null ? section.getInstructor().getFullNameEnglish() : null
+                )
                 .parentLectureSectionId(
-                        section.getParentLectureSection() != null ? section.getParentLectureSection().getId() : null
+                        section.getParentLectureSection() != null
+                                ? section.getParentLectureSection().getId()
+                                : null
                 )
                 .capacity(section.getCapacity())
                 .enrolled(section.getEnrolled())
                 .availableSeats(section.getAvailableSeats())
                 .isOfficial(section.getIsOfficial())
-                .classSessions(
-                        section.getClassSessions() == null
-                                ? List.of()
-                                : section.getClassSessions().stream().map(this::mapSession).toList()
-                )
+                .classSessions(mergedSessions)
                 .build();
     }
 
-    private ClassSessionResponseDTO mapSession(ClassSession session) {
+    /**
+     * If the session comes from a child/lab section, mark it as lab session.
+     * You can later add extra DTO fields like:
+     * - sourceSectionId
+     * - sourceSectionNumber
+     * - sourceSectionType
+     * - isLab
+     */
+    private ClassSessionResponseDTO mapSession(
+            ClassSession session,
+            boolean fromChildSection,
+            CourseSection sourceSection
+    ) {
         return ClassSessionResponseDTO.builder()
                 .id(session.getId())
-                .courseSectionId(session.getCourseSection() != null ? session.getCourseSection().getId() : null)
-                .dayOfWeek(session.getDayOfWeek() != null ? session.getDayOfWeek() : null)
-                .startTime(session.getStartTime() != null ? session.getStartTime() : null)
-                .endTime(session.getEndTime() != null ? session.getEndTime() : null)
+                .courseSectionId(sourceSection != null
+                        ? sourceSection.getId()
+                        : (session.getCourseSection() != null ? session.getCourseSection().getId() : null))
+                .dayOfWeek(session.getDayOfWeek())
+                .startTime(session.getStartTime())
+                .endTime(session.getEndTime())
                 .room(session.getRoom())
                 .building(session.getBuilding())
                 .campus(session.getCampus())
