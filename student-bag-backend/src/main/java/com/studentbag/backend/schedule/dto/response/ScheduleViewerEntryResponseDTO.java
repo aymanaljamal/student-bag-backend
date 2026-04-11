@@ -20,7 +20,7 @@ public class ScheduleViewerEntryResponseDTO {
     private boolean isAllDay;
     private String sourceType;
     private boolean isLocked;
-
+    private String colorHex;
     private Integer courseSectionId;
     private Integer eventId;
 

@@ -1,4 +1,4 @@
-package com.studentbag.backend.events.dto;
+package com.studentbag.backend.events.dto.response;
 
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotBlank;
@@ -6,23 +6,25 @@ import lombok.*;
 
 import java.time.LocalDate;
 
-@Data
-@Builder
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class OpportunityDetailsDTO {
 
-    @NotBlank(message = "Company or Organization name is required")
+    @NotBlank(message = "Company or organization name is required")
     private String companyName;
 
-    @NotBlank(message = "Role or Position title is required")
+    @NotBlank(message = "Role or position title is required")
     private String roleTitle;
 
-    private String field; // e.g., Software Engineering, Marketing
+    private String field;
 
-    private Boolean isPaid;
+    @Builder.Default
+    private Boolean isPaid = false;
 
-    private String workMode; // e.g., Remote, On-site, Hybrid
+    private String workMode;
 
     @Future(message = "Application deadline must be in the future")
     private LocalDate applicationDeadline;

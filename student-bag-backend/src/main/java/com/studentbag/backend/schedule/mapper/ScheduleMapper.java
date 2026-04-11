@@ -5,7 +5,9 @@ import com.studentbag.backend.courses.entity.CourseSection;
 import com.studentbag.backend.schedule.dto.CourseSectionDTO;
 import com.studentbag.backend.schedule.dto.ClassSessionDTO;
 import com.studentbag.backend.schedule.dto.ScheduleEntryDTO;
+import com.studentbag.backend.schedule.dto.response.ScheduleViewerEntryResponseDTO;
 import com.studentbag.backend.schedule.dto.response.StudentScheduleResponseDTO;
+import com.studentbag.backend.schedule.dto.response.StudentScheduleViewerResponseDTO;
 import com.studentbag.backend.schedule.entity.ScheduleEntry;
 import com.studentbag.backend.schedule.entity.StudentSchedule;
 import org.springframework.stereotype.Component;
@@ -15,7 +17,7 @@ import java.util.stream.Collectors;
 @Component
 public class ScheduleMapper {
 
-    // --- Schedule & Entry Mappings ---
+    // ─── Existing (لا تعديل) ──────────────────────
 
     public StudentScheduleResponseDTO toResponseDTO(StudentSchedule schedule) {
         if (schedule == null) return null;
@@ -44,8 +46,6 @@ public class ScheduleMapper {
         return dto;
     }
 
-    // --- Course & Section Mappings (Needed by TimetableMapper) ---
-
     public CourseSectionDTO toSectionDTO(CourseSection section) {
         if (section == null) return null;
 
@@ -59,7 +59,7 @@ public class ScheduleMapper {
         }
 
         dto.setInstructorName(section.getInstructor() != null ?
-                section.getInstructor().getFullNameEnglish(): "TBA");
+                section.getInstructor().getFullNameEnglish() : "TBA");
 
         if (section.getClassSessions() != null) {
             dto.setSessions(section.getClassSessions().stream()
@@ -78,5 +78,61 @@ public class ScheduleMapper {
         dto.setRoom(session.getRoom());
         dto.setBuilding(session.getBuilding());
         return dto;
+    }
+
+    // ─── New (للـ viewer وتعديل الجداول) ────────────
+
+    public StudentScheduleViewerResponseDTO toViewerDTO(StudentSchedule schedule) {
+        if (schedule == null) return null;
+
+        return StudentScheduleViewerResponseDTO.builder()
+                .id(schedule.getId())
+                .termId(schedule.getTerm().getId())
+                .termName(schedule.getTerm().getName())
+                .status(schedule.getStatus())
+                .entries(schedule.getEntries().stream()
+                        .map(this::toEntryViewerDTO)
+                        .collect(Collectors.toList()))
+                .build();
+    }
+
+    public ScheduleViewerEntryResponseDTO toEntryViewerDTO(ScheduleEntry entry) {
+        if (entry == null) return null;
+
+        Integer instructorId = null;
+        String instructorName = null;
+
+        if (entry.getCourseSection() != null
+                && entry.getCourseSection().getInstructor() != null) {
+            instructorId = entry.getCourseSection().getInstructor()
+                    .getId().intValue();
+            instructorName = entry.getCourseSection().getInstructor()
+                    .getFullNameEnglish();
+        }
+
+        return ScheduleViewerEntryResponseDTO.builder()
+                .id(entry.getId())
+                .title(entry.getTitle())
+                .description(entry.getDescription())
+                .location(entry.getLocation())
+                .startDateTime(entry.getStartDateTime())
+                .endDateTime(entry.getEndDateTime())
+                .isAllDay(Boolean.TRUE.equals(entry.getIsAllDay()))
+                .sourceType(entry.getSourceType().name())
+                .isLocked(Boolean.TRUE.equals(entry.getIsLocked()))
+                .colorHex(entry.getColorHex())
+                .courseSectionId(
+                        entry.getCourseSection() != null
+                                ? entry.getCourseSection().getId().intValue()
+                                : null
+                )
+                .eventId(
+                        entry.getEvent() != null
+                                ? entry.getEvent().getId().intValue()
+                                : null
+                )
+                .instructorId(instructorId)
+                .instructorName(instructorName)
+                .build();
     }
 }

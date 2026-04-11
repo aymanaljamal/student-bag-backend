@@ -15,7 +15,11 @@ public class ClassSessionResponseDTO {
 
     private Long id;
     private Long courseSectionId;
-
+    private Boolean isLab;
+    private Long sourceSectionId;
+    private String sourceSectionNumber;
+    private String sourceSectionType;
+    private Long parentLectureSectionId;
     private DayOfWeek dayOfWeek;
     private LocalTime startTime;
     private LocalTime endTime;

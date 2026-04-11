@@ -1,73 +1,186 @@
 package com.studentbag.backend.events.controller;
+
+import com.studentbag.backend.events.dto.request.EventRegistrationRequestDTO;
 import com.studentbag.backend.events.dto.request.EventRequestDTO;
+import com.studentbag.backend.events.dto.request.EventSearchRequestDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;
+import com.studentbag.backend.events.dto.response.OpportunityResponseDTO;
 import com.studentbag.backend.events.service.EventService;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.List;
-/**
- * REST Controller for managing University Events and Professional Opportunities.
- * Provides endpoints for event discovery, detailed views, and student registration.
- */
+
 @RestController
 @RequestMapping("/api/v1/events")
 @RequiredArgsConstructor
-@Tag(name = "University Events & Opportunities", description = "Endpoints for managing academic events, workshops, and career opportunities")
+@Tag(
+        name = "University Events & Opportunities",
+        description = "Endpoints for managing academic events, workshops, and professional opportunities"
+)
 public class EventController {
 
     private final EventService eventService;
 
+    // -------------------------------------------------------------------------
+    // Event Management
+    // -------------------------------------------------------------------------
+
     @PostMapping
-    @Operation(summary = "Create a new event or opportunity",
-            description = "Allows authorized staff to create academic events or job opportunities. Required for FR-9.2.")
-    @ApiResponse(responseCode = "201", description = "Event successfully created")
+    @Operation(
+            summary = "Create event",
+            description = "Create a new academic event or opportunity for a specific institution."
+    )
     public ResponseEntity<EventResponseDTO> createEvent(
             @Valid @RequestBody EventRequestDTO request,
-            @RequestParam Long institutionId) {
-        return new ResponseEntity<>(eventService.createEvent(request, institutionId), HttpStatus.CREATED);
+            @Parameter(description = "Institution ID", example = "1")
+            @RequestParam Long institutionId
+    ) {
+        EventResponseDTO response = eventService.createEvent(request, institutionId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
+
+    @PutMapping("/{eventId}")
+    @Operation(
+            summary = "Update event",
+            description = "Update an existing event or opportunity."
+    )
+    public ResponseEntity<EventResponseDTO> updateEvent(
+            @Parameter(description = "Event ID", example = "10")
+            @PathVariable Long eventId,
+            @Valid @RequestBody EventRequestDTO request,
+            @Parameter(description = "Institution ID", example = "1")
+            @RequestParam Long institutionId
+    ) {
+        EventResponseDTO response = eventService.updateEvent(eventId, request, institutionId);
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping
-    @Operation(summary = "Get all events",
-            description = "Fetch all events. If studentId is provided, registration status will be included.")
+    @Operation(
+            summary = "Get all events",
+            description = "Return all events. If studentId is provided, registration status is included."
+    )
     public ResponseEntity<List<EventResponseDTO>> getAllEvents(
-            @RequestParam(required = false) Long studentId) {
+            @Parameter(description = "Student ID", example = "5")
+            @RequestParam(required = false) Long studentId
+    ) {
         return ResponseEntity.ok(eventService.getAllEvents(studentId));
     }
+
     @GetMapping("/{eventId}")
-    @Operation(summary = "Get detailed event information",
-            description = "Returns full details of an event, including opportunity data if applicable.")
+    @Operation(
+            summary = "Get event by ID",
+            description = "Return full details of a specific event."
+    )
     public ResponseEntity<EventResponseDTO> getEventById(
+            @Parameter(description = "Event ID", example = "10")
             @PathVariable Long eventId,
-            @RequestParam Long studentId) {
+            @Parameter(description = "Student ID", example = "5")
+            @RequestParam(required = false) Long studentId
+    ) {
         return ResponseEntity.ok(eventService.getEventById(eventId, studentId));
     }
+
+    // -------------------------------------------------------------------------
+    // Event Search
+    // -------------------------------------------------------------------------
+
+    @PostMapping("/search")
+    @Operation(
+            summary = "Search events",
+            description = "Search events using filters such as query, event type, upcoming status, registration requirement, department, host, date range, and sorting."
+    )
+    public ResponseEntity<List<EventResponseDTO>> searchEvents(
+            @Valid @RequestBody EventSearchRequestDTO request,
+            @Parameter(description = "Student ID", example = "5")
+            @RequestParam(required = false) Long studentId
+    ) {
+        return ResponseEntity.ok(eventService.searchEvents(studentId, request));
+    }
+
+    @PostMapping("/opportunities/search")
+    @Operation(
+            summary = "Search opportunities",
+            description = "Search professional opportunities using filters such as query, paid status, work mode, application deadline, and opportunity-specific criteria."
+    )
+    public ResponseEntity<List<OpportunityResponseDTO>> searchOpportunities(
+            @Valid @RequestBody EventSearchRequestDTO request,
+            @Parameter(description = "Student ID", example = "5")
+            @RequestParam(required = false) Long studentId
+    ) {
+        return ResponseEntity.ok(eventService.searchOpportunities(studentId, request));
+    }
+
+    // -------------------------------------------------------------------------
+    // Registration
+    // -------------------------------------------------------------------------
+
     @PostMapping("/{eventId}/register")
-    @Operation(summary = "Student registration for an event",
-            description = "Registers the student and triggers capacity checks. Links to Smart Schedule (FR-9.4, FR-9.5).")
-    @ApiResponse(responseCode = "201", description = "Successfully registered")
-    public ResponseEntity<Void> register(@PathVariable Long eventId, @RequestParam Long studentId) {
+    @Operation(
+            summary = "Register for event",
+            description = "Register a student for an event with capacity and duplicate-registration checks."
+    )
+    public ResponseEntity<Void> registerForEvent(
+            @Parameter(description = "Event ID", example = "10")
+            @PathVariable Long eventId,
+            @Parameter(description = "Student ID", example = "5")
+            @RequestParam Long studentId
+    ) {
         eventService.registerForEvent(eventId, studentId);
         return ResponseEntity.status(HttpStatus.CREATED).build();
     }
-    @DeleteMapping("/{eventId}/cancel")
-    @Operation(summary = "Cancel event registration",
-            description = "Removes the student from the participant list. Required for FR-9.8.")
-    @ApiResponse(responseCode = "204", description = "Registration successfully cancelled")
-    public ResponseEntity<Void> cancelRegistration(@PathVariable Long eventId, @RequestParam Long studentId) {
+
+    @PostMapping("/{eventId}/register/details")
+    @Operation(
+            summary = "Register for event with request body",
+            description = "Register a student for an event using an optional registration request body."
+    )
+    public ResponseEntity<Void> registerForEventWithBody(
+            @Parameter(description = "Event ID", example = "10")
+            @PathVariable Long eventId,
+            @Parameter(description = "Student ID", example = "5")
+            @RequestParam Long studentId,
+            @Valid @RequestBody EventRegistrationRequestDTO request
+    ) {
+        eventService.registerForEvent(eventId, studentId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @DeleteMapping("/{eventId}/register")
+    @Operation(
+            summary = "Cancel registration",
+            description = "Cancel a student's registration for an event."
+    )
+    public ResponseEntity<Void> cancelRegistration(
+            @Parameter(description = "Event ID", example = "10")
+            @PathVariable Long eventId,
+            @Parameter(description = "Student ID", example = "5")
+            @RequestParam Long studentId
+    ) {
         eventService.cancelRegistration(eventId, studentId);
         return ResponseEntity.noContent().build();
     }
+
+    // -------------------------------------------------------------------------
+    // External Sync
+    // -------------------------------------------------------------------------
+
     @PostMapping("/sync")
-    @Operation(summary = "University System Synchronization",
-            description = "Manually triggers a sync with external university APIs. Supports FR-9.2 and FR-9.7.")
-    @ApiResponse(responseCode = "202", description = "Sync request accepted and processing")
-    public ResponseEntity<Void> syncEvents(@RequestParam Long institutionId) {
+    @Operation(
+            summary = "Sync events from university API",
+            description = "Trigger synchronization with an external university events source."
+    )
+    public ResponseEntity<Void> syncEvents(
+            @Parameter(description = "Institution ID", example = "1")
+            @RequestParam Long institutionId
+    ) {
         eventService.syncWithUniversityAPI(institutionId);
         return ResponseEntity.accepted().build();
     }

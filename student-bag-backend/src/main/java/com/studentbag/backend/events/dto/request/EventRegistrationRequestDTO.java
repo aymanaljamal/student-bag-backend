@@ -1,10 +1,16 @@
 package com.studentbag.backend.events.dto.request;
 
-import lombok.Data;
+import lombok.*;
 
-@Data
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class EventRegistrationRequestDTO {
-    private Long eventId;
-    private Long studentId;
 
+    /**
+     * optional note for future use
+     */
+    private String note;
 }

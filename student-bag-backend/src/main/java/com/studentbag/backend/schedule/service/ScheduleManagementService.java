@@ -1,15 +1,19 @@
 package com.studentbag.backend.schedule.service;
 
+import com.studentbag.backend.schedule.dto.request.UpdateScheduleRequest;
 import com.studentbag.backend.schedule.dto.response.StudentScheduleResponseDTO;
+import com.studentbag.backend.schedule.dto.response.UpdateScheduleResponseDTO;
+
 import java.util.List;
 
 public interface ScheduleManagementService {
-
     void activateSchedule(Long scheduleId, Long studentId);
-
-    // FIX: Returns a List of DTOs instead of Entities
+    void archiveSchedule(Long scheduleId, Long studentId);
     List<StudentScheduleResponseDTO> getStudentSchedules(Long studentId);
-
-    // FIX: Added studentId to the signature for security validation
     void deleteSchedule(Long scheduleId, Long studentId);
+    UpdateScheduleResponseDTO updateScheduleEntries(
+                                                        Long scheduleId,
+                                                        Long studentId,
+                                                        UpdateScheduleRequest request
+    );
 }
