@@ -1,9 +1,9 @@
 package com.studentbag.backend.resources.dto.response;
 
-import com.studentbag.backend.domain.enums.AcademicLevel;
+import com.studentbag.backend.domain.enums.courses.AcademicLevel;
 import com.studentbag.backend.domain.enums.ContentFormat;
 import com.studentbag.backend.domain.enums.LanguageCode;
-import com.studentbag.backend.domain.enums.ResourceType;
+import com.studentbag.backend.domain.enums.resources.ResourceType;
 import lombok.Builder;
 import lombok.Getter;
 

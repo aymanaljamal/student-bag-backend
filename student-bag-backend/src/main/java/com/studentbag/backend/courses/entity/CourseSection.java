@@ -1,7 +1,7 @@
 package com.studentbag.backend.courses.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
-import com.studentbag.backend.domain.enums.SectionType;
+import com.studentbag.backend.domain.enums.courses.SectionType;
 import com.studentbag.backend.instructor.entity.Instructor;
 import jakarta.persistence.*;
 import lombok.Getter;

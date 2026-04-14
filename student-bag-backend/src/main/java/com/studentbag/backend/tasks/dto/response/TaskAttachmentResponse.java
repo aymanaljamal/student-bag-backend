@@ -1,5 +1,5 @@
 package com.studentbag.backend.tasks.dto.response;
-import com.studentbag.backend.domain.enums.TaskAttachmentType;
+import com.studentbag.backend.domain.enums.tasks.TaskAttachmentType;
 import lombok.*;
 
 import java.time.LocalDateTime;

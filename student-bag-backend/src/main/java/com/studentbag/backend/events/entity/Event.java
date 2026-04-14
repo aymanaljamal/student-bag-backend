@@ -1,8 +1,8 @@
 package com.studentbag.backend.events.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
-import com.studentbag.backend.domain.enums.EventType;
-import com.studentbag.backend.domain.enums.RegistrationStatus;
+import com.studentbag.backend.domain.enums.schedule.EventType;
+import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
 import com.studentbag.backend.institution.entity.Institution;
 import jakarta.persistence.*;
 import lombok.*;

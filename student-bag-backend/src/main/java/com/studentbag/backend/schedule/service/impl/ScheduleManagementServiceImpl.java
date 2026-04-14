@@ -1,7 +1,7 @@
 package com.studentbag.backend.schedule.service.impl;
 
-import com.studentbag.backend.domain.enums.ScheduleSourceType;
-import com.studentbag.backend.domain.enums.ScheduleStatus;
+import com.studentbag.backend.domain.enums.schedule.ScheduleSourceType;
+import com.studentbag.backend.domain.enums.schedule.ScheduleStatus;
 import com.studentbag.backend.schedule.dto.ConflictDTO;
 import com.studentbag.backend.schedule.dto.request.UpdateScheduleEntryRequest;
 import com.studentbag.backend.schedule.dto.request.UpdateScheduleRequest;

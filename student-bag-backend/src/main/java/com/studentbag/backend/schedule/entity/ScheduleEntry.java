@@ -2,8 +2,7 @@ package com.studentbag.backend.schedule.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
 import com.studentbag.backend.courses.entity.CourseSection;
-import com.studentbag.backend.courses.entity.Term;
-import com.studentbag.backend.domain.enums.ScheduleSourceType;
+import com.studentbag.backend.domain.enums.schedule.ScheduleSourceType;
 import com.studentbag.backend.events.entity.Event;
 import com.studentbag.backend.student.entity.Student;
 import jakarta.persistence.*;

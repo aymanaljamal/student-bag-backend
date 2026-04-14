@@ -1,10 +1,9 @@
 package com.studentbag.backend.tasks.dto.request;
 
-import com.studentbag.backend.domain.enums.TaskPriority;
-import com.studentbag.backend.domain.enums.TaskRecurrenceType;
+import com.studentbag.backend.domain.enums.tasks.TaskPriority;
+import com.studentbag.backend.domain.enums.tasks.TaskRecurrenceType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -42,6 +41,12 @@ public class CreateTaskRequest {
 
     @Builder.Default
     private Integer recurrenceInterval = 1;
+
+    @Builder.Default
+    private Boolean notificationsEnabled = true;
+
+    @Builder.Default
+    private Boolean autoReminderOneDayBefore = true;
 
     @Valid
     @Builder.Default

@@ -1,6 +1,6 @@
 package com.studentbag.backend.events.mapper;
 
-import com.studentbag.backend.domain.enums.RegistrationStatus;
+import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
 
 import com.studentbag.backend.events.dto.request.EventRequestDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;

@@ -1,6 +1,6 @@
 package com.studentbag.backend.schedule.dto.request;
 
-import com.studentbag.backend.domain.enums.ScheduleSourceType;
+import com.studentbag.backend.domain.enums.schedule.ScheduleSourceType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;

@@ -1,6 +1,6 @@
 package com.studentbag.backend.events.repository;
 
-import com.studentbag.backend.domain.enums.RegistrationStatus;
+import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
 import com.studentbag.backend.events.entity.EventRegistration;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;

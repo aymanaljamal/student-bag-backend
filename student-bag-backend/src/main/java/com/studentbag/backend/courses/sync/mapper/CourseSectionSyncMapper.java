@@ -4,7 +4,7 @@ import com.studentbag.backend.courses.entity.Course;
 import com.studentbag.backend.courses.entity.CourseSection;
 import com.studentbag.backend.courses.entity.Term;
 import com.studentbag.backend.courses.sync.dto.RitajSectionDto;
-import com.studentbag.backend.domain.enums.SectionType;
+import com.studentbag.backend.domain.enums.courses.SectionType;
 import com.studentbag.backend.instructor.entity.Instructor;
 import org.springframework.stereotype.Component;
 

@@ -6,7 +6,7 @@ import com.studentbag.backend.courses.sync.dto.RitajCourseDto;
 import com.studentbag.backend.courses.sync.dto.RitajSectionDto;
 import com.studentbag.backend.courses.sync.helper.CourseCodeMetadataHelper;
 import com.studentbag.backend.courses.sync.helper.RoomParsingHelper;
-import com.studentbag.backend.domain.enums.SectionType;
+import com.studentbag.backend.domain.enums.courses.SectionType;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.instructor.entity.Instructor;
 import lombok.RequiredArgsConstructor;

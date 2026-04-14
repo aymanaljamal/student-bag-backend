@@ -1,6 +1,6 @@
 package com.studentbag.backend.schedule.dto.response;
 
-import com.studentbag.backend.domain.enums.ScheduleStatus;
+import com.studentbag.backend.domain.enums.schedule.ScheduleStatus;
 import com.studentbag.backend.schedule.dto.ScheduleEntryDTO;
 import lombok.AllArgsConstructor;
 import lombok.Builder;

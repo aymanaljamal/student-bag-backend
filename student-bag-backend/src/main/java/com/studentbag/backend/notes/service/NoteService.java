@@ -1,8 +1,8 @@
 package com.studentbag.backend.notes.service;
 
 import com.studentbag.backend.common.exception.ResourceNotFoundException;
-import com.studentbag.backend.domain.enums.NotePriority;
-import com.studentbag.backend.domain.enums.NoteType;
+import com.studentbag.backend.domain.enums.notes.NotePriority;
+import com.studentbag.backend.domain.enums.notes.NoteType;
 import com.studentbag.backend.notes.entity.Note;
 import com.studentbag.backend.notes.entity.NoteAttachment;
 import com.studentbag.backend.notes.repository.NoteAttachmentRepository;

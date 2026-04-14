@@ -1,6 +1,6 @@
 package com.studentbag.backend.tasks.dto.request;
 
-import com.studentbag.backend.domain.enums.TaskStatus;
+import com.studentbag.backend.domain.enums.tasks.TaskStatus;
 import lombok.*;
 
 @Getter

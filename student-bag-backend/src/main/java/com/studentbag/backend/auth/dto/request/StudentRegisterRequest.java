@@ -1,6 +1,6 @@
 package com.studentbag.backend.auth.dto.request;
 
-import com.studentbag.backend.domain.enums.AcademicLevel;
+import com.studentbag.backend.domain.enums.courses.AcademicLevel;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.EqualsAndHashCode;

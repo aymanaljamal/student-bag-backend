@@ -1,7 +1,7 @@
 package com.studentbag.backend.notes.dto.response;
 
-import com.studentbag.backend.domain.enums.NotePriority;
-import com.studentbag.backend.domain.enums.NoteType;
+import com.studentbag.backend.domain.enums.notes.NotePriority;
+import com.studentbag.backend.domain.enums.notes.NoteType;
 import lombok.Builder;
 import lombok.Getter;
 

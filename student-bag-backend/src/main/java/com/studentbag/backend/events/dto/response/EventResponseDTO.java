@@ -1,6 +1,6 @@
 package com.studentbag.backend.events.dto.response;
 
-import com.studentbag.backend.domain.enums.EventType;
+import com.studentbag.backend.domain.enums.schedule.EventType;
 import lombok.*;
 
 import java.time.LocalDateTime;

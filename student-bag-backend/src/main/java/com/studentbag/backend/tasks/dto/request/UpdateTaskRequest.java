@@ -1,8 +1,7 @@
 package com.studentbag.backend.tasks.dto.request;
 
-
-import com.studentbag.backend.domain.enums.TaskPriority;
-import com.studentbag.backend.domain.enums.TaskRecurrenceType;
+import com.studentbag.backend.domain.enums.tasks.TaskPriority;
+import com.studentbag.backend.domain.enums.tasks.TaskRecurrenceType;
 import jakarta.validation.Valid;
 import lombok.*;
 
@@ -34,6 +33,10 @@ public class UpdateTaskRequest {
     private TaskRecurrenceType recurrenceType;
 
     private Integer recurrenceInterval;
+
+    private Boolean notificationsEnabled;
+
+    private Boolean autoReminderOneDayBefore;
 
     @Valid
     private List<UpdateSubtaskRequest> subtasks;

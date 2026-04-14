@@ -2,7 +2,7 @@ package com.studentbag.backend.tasks.service.Impl;
 
 import com.studentbag.backend.courses.entity.Course;
 import com.studentbag.backend.courses.repository.CourseRepository;
-import com.studentbag.backend.domain.enums.TaskStatus;
+import com.studentbag.backend.domain.enums.tasks.TaskStatus;
 import com.studentbag.backend.student.entity.Student;
 import com.studentbag.backend.student.repository.StudentRepository;
 import com.studentbag.backend.tasks.dto.request.*;

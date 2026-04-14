@@ -1,10 +1,10 @@
 package com.studentbag.backend.resources.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
-import com.studentbag.backend.domain.enums.AcademicLevel;
+import com.studentbag.backend.domain.enums.courses.AcademicLevel;
 import com.studentbag.backend.domain.enums.ContentFormat;
 import com.studentbag.backend.domain.enums.LanguageCode;
-import com.studentbag.backend.domain.enums.ResourceType;
+import com.studentbag.backend.domain.enums.resources.ResourceType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;

@@ -1,6 +1,6 @@
 package com.studentbag.backend.courses.dto.response;
 
-import com.studentbag.backend.domain.enums.SectionType;
+import com.studentbag.backend.domain.enums.courses.SectionType;
 import lombok.Builder;
 import lombok.Data;
 

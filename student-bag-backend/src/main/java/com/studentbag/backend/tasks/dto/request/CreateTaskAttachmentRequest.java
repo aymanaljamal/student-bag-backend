@@ -1,5 +1,5 @@
 package com.studentbag.backend.tasks.dto.request;
-import com.studentbag.backend.domain.enums.TaskAttachmentType;
+import com.studentbag.backend.domain.enums.tasks.TaskAttachmentType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
