@@ -1,8 +1,12 @@
 package com.studentbag.backend.tasks.controller;
 
+import com.studentbag.backend.student.entity.Student;
+import com.studentbag.backend.student.repository.StudentRepository;
 import com.studentbag.backend.tasks.dto.request.*;
 import com.studentbag.backend.tasks.dto.response.*;
 import com.studentbag.backend.tasks.service.TaskService;
+import com.studentbag.backend.users.entity.User;
+import com.studentbag.backend.users.repository.UserRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -11,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +27,20 @@ import java.util.List;
 public class TaskController {
 
     private final TaskService taskService;
+    private final UserRepository userRepository;
+    private final StudentRepository studentRepository;
+
+    private Long getCurrentStudentId(UserDetails userDetails) {
+        String email = userDetails.getUsername();
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new IllegalArgumentException("User not found with email: " + email));
+
+        Student student = studentRepository.findByUserId(user.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Student not found for user email: " + email));
+
+        return student.getId();
+    }
 
     // -------------------------------------------------------------------------
     // Core Task Operations
@@ -34,9 +53,10 @@ public class TaskController {
     )
     public ResponseEntity<TaskResponse> createTask(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody CreateTaskRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskResponse response = taskService.createTask(studentId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -48,11 +68,12 @@ public class TaskController {
     )
     public ResponseEntity<TaskResponse> updateTask(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId,
             @Valid @RequestBody UpdateTaskRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskResponse response = taskService.updateTask(studentId, taskId, request);
         return ResponseEntity.ok(response);
     }
@@ -64,10 +85,11 @@ public class TaskController {
     )
     public ResponseEntity<TaskResponse> getTaskById(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskResponse response = taskService.getTaskById(studentId, taskId);
         return ResponseEntity.ok(response);
     }
@@ -79,10 +101,11 @@ public class TaskController {
     )
     public ResponseEntity<TaskActionResponse> deleteTask(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskActionResponse response = taskService.deleteTask(studentId, taskId);
         return ResponseEntity.ok(response);
     }
@@ -98,8 +121,9 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskSummaryResponse>> getAllTasks(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getAllTasks(studentId));
     }
 
@@ -110,8 +134,9 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskSummaryResponse>> getActiveTasks(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getActiveTasks(studentId));
     }
 
@@ -122,8 +147,9 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskSummaryResponse>> getCompletedTasks(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getCompletedTasks(studentId));
     }
 
@@ -134,8 +160,9 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskSummaryResponse>> getArchivedTasks(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getArchivedTasks(studentId));
     }
 
@@ -146,8 +173,9 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskSummaryResponse>> getTodayTasks(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getTodayTasks(studentId));
     }
 
@@ -158,10 +186,11 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskSummaryResponse>> getTasksByCourse(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Course ID", example = "10")
             @PathVariable Long courseId
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getTasksByCourse(studentId, courseId));
     }
 
@@ -176,11 +205,12 @@ public class TaskController {
     )
     public ResponseEntity<TaskActionResponse> changeArchiveState(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId,
             @Valid @RequestBody ArchiveTaskRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskActionResponse response = taskService.archiveTask(studentId, taskId, request);
         return ResponseEntity.ok(response);
     }
@@ -192,11 +222,12 @@ public class TaskController {
     )
     public ResponseEntity<TaskActionResponse> changeCompletionState(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId,
             @Valid @RequestBody TaskCompletionRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskActionResponse response = taskService.completeTask(studentId, taskId, request);
         return ResponseEntity.ok(response);
     }
@@ -208,11 +239,12 @@ public class TaskController {
     )
     public ResponseEntity<TaskActionResponse> changeStatus(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId,
             @Valid @RequestBody UpdateTaskStatusRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskActionResponse response = taskService.updateTaskStatus(studentId, taskId, request);
         return ResponseEntity.ok(response);
     }
@@ -224,9 +256,10 @@ public class TaskController {
     )
     public ResponseEntity<BulkTaskActionResponse> applyBulkAction(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody BulkTaskActionRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         BulkTaskActionResponse response = taskService.applyBulkAction(studentId, request);
         return ResponseEntity.ok(response);
     }
@@ -242,9 +275,10 @@ public class TaskController {
     )
     public ResponseEntity<TaskSearchResponse> searchTasks(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody TaskSearchRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskSearchResponse response = taskService.searchTasks(studentId, request);
         return ResponseEntity.ok(response);
     }
@@ -256,9 +290,10 @@ public class TaskController {
     )
     public ResponseEntity<TaskAdvancedSearchResponse> advancedSearchTasks(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody TaskSearchRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskAdvancedSearchResponse response = taskService.advancedSearchTasks(studentId, request);
         return ResponseEntity.ok(response);
     }
@@ -270,8 +305,9 @@ public class TaskController {
     )
     public ResponseEntity<TaskStatsResponse> getTaskStats(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskStatsResponse response = taskService.getTaskStats(studentId);
         return ResponseEntity.ok(response);
     }
@@ -287,9 +323,10 @@ public class TaskController {
     )
     public ResponseEntity<TaskLabelResponse> createLabel(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody CreateTaskLabelRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskLabelResponse response = taskService.createLabel(studentId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -301,11 +338,12 @@ public class TaskController {
     )
     public ResponseEntity<TaskLabelResponse> updateLabel(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Label ID", example = "3")
             @PathVariable Long labelId,
             @Valid @RequestBody UpdateTaskLabelRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskLabelResponse response = taskService.updateLabel(studentId, labelId, request);
         return ResponseEntity.ok(response);
     }
@@ -317,8 +355,9 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskLabelResponse>> getAllLabels(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getAllLabels(studentId));
     }
 
@@ -333,11 +372,12 @@ public class TaskController {
     )
     public ResponseEntity<TaskAttachmentUploadResponse> addAttachment(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId,
             @Valid @RequestBody CreateTaskAttachmentRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskAttachmentUploadResponse response = taskService.addAttachment(studentId, taskId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -349,12 +389,13 @@ public class TaskController {
     )
     public ResponseEntity<DeleteAttachmentResponse> deleteAttachment(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId,
             @Parameter(description = "Attachment ID", example = "5")
             @PathVariable Long attachmentId
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         DeleteAttachmentResponse response = taskService.deleteAttachment(studentId, taskId, attachmentId);
         return ResponseEntity.ok(response);
     }
@@ -370,10 +411,11 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskReminderResponse>> getTaskReminders(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getTaskReminders(studentId, taskId));
     }
 
@@ -384,8 +426,9 @@ public class TaskController {
     )
     public ResponseEntity<List<TaskReminderPreviewResponse>> getUpcomingReminders(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(taskService.getUpcomingReminders(studentId));
     }
 
@@ -400,11 +443,12 @@ public class TaskController {
     )
     public ResponseEntity<TaskResponse> reorderSubtasks(
             @Parameter(hidden = true)
-            @AuthenticationPrincipal(expression = "studentId") Long studentId,
+            @AuthenticationPrincipal UserDetails userDetails,
             @Parameter(description = "Task ID", example = "1")
             @PathVariable Long taskId,
             @Valid @RequestBody ReorderSubtasksRequest request
     ) {
+        Long studentId = getCurrentStudentId(userDetails);
         TaskResponse response = taskService.reorderSubtasks(studentId, taskId, request);
         return ResponseEntity.ok(response);
     }

@@ -28,11 +28,10 @@ public class AuthController {
     }
 
 
-
-   // @PostMapping("/register/instructor")
-  //  public AuthResponse registerInstructor(@Valid @RequestBody InstructorRegisterRequest request) {
-  //      return authService.registerInstructor(request);
-  //  }
+    @PostMapping("/register/instructor")
+  public AuthResponse registerInstructor(@Valid @RequestBody InstructorRegisterRequest request) {
+    return authService.registerInstructor(request);
+   }
 
     @PostMapping("/register/admin")
     public AuthResponse registerAdministrator(@Valid @RequestBody AdministratorRegisterRequest request) {

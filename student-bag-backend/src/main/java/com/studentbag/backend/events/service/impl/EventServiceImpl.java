@@ -76,6 +76,28 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
+    public EventResponseDTO finishEvent(Long eventId) {
+        Event event = getEventByIdOrThrow(eventId);
+
+        event.setEndDateTime(LocalDateTime.now());
+
+        Event savedEvent = eventRepository.save(event);
+        log.info("Finished event with id={}", savedEvent.getId());
+
+        return buildEventResponse(savedEvent, null);
+    }
+
+    @Override
+    public void deleteEvent(Long eventId) {
+        Event event = getEventByIdOrThrow(eventId);
+
+        registrationRepository.deleteByEventId(eventId);
+        eventRepository.delete(event);
+
+        log.info("Deleted event with id={}", eventId);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public EventResponseDTO getEventById(Long eventId, Long studentId) {
         Event event = getEventByIdOrThrow(eventId);
@@ -144,8 +166,7 @@ public class EventServiceImpl implements EventService {
                         "Registration not found for event id: " + eventId + " and student id: " + studentId
                 ));
 
-        registration.cancel();
-        registrationRepository.save(registration);
+        registrationRepository.delete(registration);
 
         log.info("Student {} cancelled registration for event {}", studentId, eventId);
     }
@@ -193,6 +214,7 @@ public class EventServiceImpl implements EventService {
 
     private EventResponseDTO buildEventResponse(Event event, Long studentId) {
         EventResponseDTO response = eventMapper.toResponseDTO(event, studentId);
+        response.setIsEnded(isEventEnded(event));
 
         if (studentId == null) {
             return response;
@@ -209,6 +231,10 @@ public class EventServiceImpl implements EventService {
             throw new IllegalStateException("This event does not require registration");
         }
 
+        if (isEventEnded(event)) {
+            throw new IllegalStateException("Cannot register for an event that has already ended");
+        }
+
         if (!event.hasCapacity()) {
             throw new IllegalStateException("Event is already at full capacity");
         }
@@ -216,6 +242,10 @@ public class EventServiceImpl implements EventService {
         if (registrationRepository.findByEventIdAndStudentId(event.getId(), studentId).isPresent()) {
             throw new IllegalStateException("Student is already registered for this event");
         }
+    }
+
+    private boolean isEventEnded(Event event) {
+        return event.getEndDateTime() != null && !event.getEndDateTime().isAfter(LocalDateTime.now());
     }
 
     private boolean matchesSearch(Event event, EventSearchRequestDTO request) {

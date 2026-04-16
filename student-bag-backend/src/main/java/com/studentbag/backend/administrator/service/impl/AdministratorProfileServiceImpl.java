@@ -1,10 +1,11 @@
-package com.studentbag.backend.administrator.service;
+package com.studentbag.backend.administrator.service.impl;
 
 import com.studentbag.backend.administrator.dto.request.UpdateAdministratorProfileRequest;
 import com.studentbag.backend.administrator.dto.response.AdministratorProfileResponse;
 import com.studentbag.backend.administrator.entity.Administrator;
 import com.studentbag.backend.administrator.mapper.AdministratorProfileMapper;
 import com.studentbag.backend.administrator.repository.AdministratorRepository;
+import com.studentbag.backend.administrator.service.AdministratorProfileService;
 import com.studentbag.backend.common.exception.ResourceNotFoundException;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.institution.repository.InstitutionRepository;

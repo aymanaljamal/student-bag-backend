@@ -29,4 +29,6 @@ public interface EventService {
     void cancelRegistration(Long eventId, Long studentId);
 
     void syncWithUniversityAPI(Long institutionId);
+    EventResponseDTO finishEvent(Long eventId);
+    void deleteEvent(Long eventId);
 }

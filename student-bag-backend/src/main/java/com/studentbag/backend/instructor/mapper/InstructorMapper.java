@@ -32,8 +32,6 @@ public class InstructorMapper {
                 .phone(user != null ? user.getPhone() : null)
                 .avatarUrl(user != null ? user.getAvatarUrl() : null)
                 .active(user != null ? user.isActive() : null)
-
-                .accountConfirmed(instructor.getAccountConfirmed())
                 .build();
     }
 }

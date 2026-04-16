@@ -12,6 +12,10 @@ import java.util.Optional;
 
 @Repository
 public interface StudentScheduleRepository extends JpaRepository<StudentSchedule, Long> {
+    Optional<StudentSchedule> findFirstByStudentIdAndStatusOrderByIdDesc(
+            Long studentId,
+            ScheduleStatus status
+    );
     /**
      * Finds all schedules belonging to a specific student.
      * Resolves: Cannot resolve method 'findAllByStudentId'

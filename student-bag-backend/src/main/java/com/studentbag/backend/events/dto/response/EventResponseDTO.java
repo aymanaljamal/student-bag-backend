@@ -16,7 +16,7 @@ public class EventResponseDTO {
     private String title;
     private String description;
     private EventType eventType;
-
+    private Boolean isEnded;
     private LocalDateTime startDateTime;
     private LocalDateTime endDateTime;
 

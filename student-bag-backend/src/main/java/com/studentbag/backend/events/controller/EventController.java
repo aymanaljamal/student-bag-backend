@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -32,6 +33,7 @@ public class EventController {
     // Event Management
     // -------------------------------------------------------------------------
 
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
     @PostMapping
     @Operation(
             summary = "Create event",
@@ -46,6 +48,7 @@ public class EventController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
     @PutMapping("/{eventId}")
     @Operation(
             summary = "Update event",
@@ -60,6 +63,34 @@ public class EventController {
     ) {
         EventResponseDTO response = eventService.updateEvent(eventId, request, institutionId);
         return ResponseEntity.ok(response);
+    }
+
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
+    @PatchMapping("/{eventId}/finish")
+    @Operation(
+            summary = "Finish event",
+            description = "Mark an event as ended immediately."
+    )
+    public ResponseEntity<EventResponseDTO> finishEvent(
+            @Parameter(description = "Event ID", example = "10")
+            @PathVariable Long eventId
+    ) {
+        EventResponseDTO response = eventService.finishEvent(eventId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
+    @DeleteMapping("/{eventId}")
+    @Operation(
+            summary = "Delete event",
+            description = "Delete an event permanently."
+    )
+    public ResponseEntity<Void> deleteEvent(
+            @Parameter(description = "Event ID", example = "10")
+            @PathVariable Long eventId
+    ) {
+        eventService.deleteEvent(eventId);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping
@@ -172,6 +203,7 @@ public class EventController {
     // External Sync
     // -------------------------------------------------------------------------
 
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
     @PostMapping("/sync")
     @Operation(
             summary = "Sync events from university API",

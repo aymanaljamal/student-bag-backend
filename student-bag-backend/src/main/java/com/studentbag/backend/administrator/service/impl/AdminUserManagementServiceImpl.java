@@ -1,10 +1,11 @@
-package com.studentbag.backend.administrator.service;
+package com.studentbag.backend.administrator.service.impl;
 
 import com.studentbag.backend.administrator.dto.request.AdminUpdateManagedUserRequest;
 import com.studentbag.backend.administrator.dto.response.AdminManagedUserDetailsResponse;
 import com.studentbag.backend.administrator.dto.response.AdminManagedUserSummaryResponse;
 import com.studentbag.backend.administrator.entity.Administrator;
 import com.studentbag.backend.administrator.repository.AdministratorRepository;
+import com.studentbag.backend.administrator.service.AdminUserManagementService;
 import com.studentbag.backend.auth.dto.request.InstructorRegisterRequest;
 import com.studentbag.backend.auth.dto.request.StudentRegisterRequest;
 import com.studentbag.backend.auth.dto.response.AuthResponse;
@@ -90,10 +91,10 @@ public class AdminUserManagementServiceImpl implements AdminUserManagementServic
         return authService.registerStudent(request);
     }
 
-  // @Override
-   // public AuthResponse createInstructor(InstructorRegisterRequest request) {
-       // return authService.registerInstructor(request);
-   // }
+    @Override
+    public AuthResponse createInstructor(InstructorRegisterRequest request) {
+     return authService.registerInstructor(request);
+}
 
     private AdminManagedUserDetailsResponse mapToDetails(User user) {
         AdminManagedUserDetailsResponse.AdminManagedUserDetailsResponseBuilder builder =

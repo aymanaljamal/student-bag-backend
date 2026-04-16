@@ -26,6 +26,7 @@ public interface EventRepository extends JpaRepository<Event, Long> {
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to
     );
+
     @Query("SELECT e FROM Event e WHERE " +
             "(:type IS NULL OR e.eventType = :type) AND " +
             "(:dept IS NULL OR e.department = :dept) AND " +
