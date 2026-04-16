@@ -4,7 +4,10 @@ import com.studentbag.backend.courses.entity.Department;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.users.entity.User;
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 @Entity
@@ -19,15 +22,15 @@ import lombok.Setter;
 )
 @Getter
 @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Instructor {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /**
-     * لو طلع من ريتاج id أو مفتاح مميز
-     */
     @Column(name = "external_id", length = 100)
     private String externalId;
 
@@ -49,5 +52,6 @@ public class Instructor {
     private Institution institution;
 
     @Column(nullable = false)
-    private Boolean accountConfirmed = false;
+    @Builder.Default
+    private boolean accountConfirmed = false;
 }

@@ -1,5 +1,5 @@
 package com.studentbag.backend.courses.dto.response;
-import com.studentbag.backend.domain.enums.Season;
+import com.studentbag.backend.domain.enums.courses.Season;
 import lombok.Builder;
 import lombok.Data;
 import java.time.LocalDate;

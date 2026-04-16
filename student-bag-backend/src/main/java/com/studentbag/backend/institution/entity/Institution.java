@@ -1,7 +1,7 @@
 package com.studentbag.backend.institution.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
-import com.studentbag.backend.domain.enums.InstitutionType;
+import com.studentbag.backend.domain.enums.institution.InstitutionType;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;

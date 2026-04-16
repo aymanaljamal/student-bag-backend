@@ -1,7 +1,7 @@
 package com.studentbag.backend.courses.sync.mapper;
 
 import com.studentbag.backend.courses.entity.Term;
-import com.studentbag.backend.domain.enums.Season;
+import com.studentbag.backend.domain.enums.courses.Season;
 import com.studentbag.backend.institution.entity.Institution;
 import org.springframework.stereotype.Component;
 

@@ -1,15 +1,15 @@
 package com.studentbag.backend.tasks.mapper;
 
 import com.studentbag.backend.courses.entity.Course;
-import com.studentbag.backend.domain.enums.TaskPriority;
-import com.studentbag.backend.domain.enums.TaskRecurrenceType;
-import com.studentbag.backend.domain.enums.TaskStatus;
+import com.studentbag.backend.domain.enums.tasks.TaskPriority;
+import com.studentbag.backend.domain.enums.tasks.TaskRecurrenceType;
+import com.studentbag.backend.domain.enums.tasks.TaskStatus;
+import com.studentbag.backend.tasks.dto.request.ArchiveTaskRequest;
 import com.studentbag.backend.tasks.dto.request.CreateTaskRequest;
 import com.studentbag.backend.tasks.dto.request.TaskCompletionRequest;
 import com.studentbag.backend.tasks.dto.request.TaskStatusChangeRequest;
 import com.studentbag.backend.tasks.dto.request.UpdateTaskRequest;
 import com.studentbag.backend.tasks.dto.request.UpdateTaskStatusRequest;
-import com.studentbag.backend.tasks.dto.request.ArchiveTaskRequest;
 import com.studentbag.backend.tasks.dto.response.*;
 import com.studentbag.backend.tasks.entity.*;
 import org.springframework.stereotype.Component;
@@ -54,6 +54,7 @@ public class TaskMapper {
                 .estimatedMinutes(request.getEstimatedMinutes())
                 .recurrenceType(request.getRecurrenceType() != null ? request.getRecurrenceType() : TaskRecurrenceType.NONE)
                 .recurrenceInterval(request.getRecurrenceInterval() != null ? request.getRecurrenceInterval() : 1)
+                .notificationsEnabled(request.getNotificationsEnabled() != null ? request.getNotificationsEnabled() : true)
                 .build();
 
         if (request.getSubtasks() != null) {
@@ -120,6 +121,10 @@ public class TaskMapper {
 
         if (request.getRecurrenceInterval() != null) {
             task.setRecurrenceInterval(request.getRecurrenceInterval());
+        }
+
+        if (request.getNotificationsEnabled() != null) {
+            task.setNotificationsEnabled(request.getNotificationsEnabled());
         }
 
         if (request.getCourseId() != null || courseOrNull == null) {
@@ -267,46 +272,39 @@ public class TaskMapper {
                 .dueDateTime(entity.getDueDateTime())
                 .priority(entity.getPriority())
                 .status(entity.getStatus())
-
                 .archived(entity.getArchived())
                 .deleted(entity.getIsDeleted())
                 .completed(entity.getStatus() == TaskStatus.COMPLETED)
                 .overdue(isOverdue(entity))
-
                 .completedAt(entity.getCompletedAt())
                 .estimatedMinutes(entity.getEstimatedMinutes())
-
                 .recurrenceType(entity.getRecurrenceType())
                 .recurrenceInterval(entity.getRecurrenceInterval())
                 .recurrenceLastGeneratedAt(entity.getRecurrenceLastGeneratedAt())
                 .nextOccurrenceAt(entity.getNextOccurrenceAt())
-
+                .notificationsEnabled(entity.getNotificationsEnabled())
                 .studentId(entity.getStudent() != null ? entity.getStudent().getId() : null)
-
                 .courseId(entity.getCourse() != null ? entity.getCourse().getId() : null)
                 .courseCode(entity.getCourse() != null ? entity.getCourse().getCode() : null)
                 .courseNameArabic(entity.getCourse() != null ? entity.getCourse().getNameArabic() : null)
                 .courseNameEnglish(entity.getCourse() != null ? entity.getCourse().getNameEnglish() : null)
-
                 .labels(entity.getLabels() == null
                         ? List.of()
                         : entity.getLabels().stream()
                         .map(taskLabelMapper::toResponse)
                         .toList())
-
                 .subtasks(subtaskMapper.toResponseList(entity.getSubtasks()))
                 .attachments(taskAttachmentMapper.toResponseList(entity.getAttachments()))
                 .reminders(taskReminderMapper.toResponseList(entity.getReminders()))
-
                 .subtaskCount(subtaskCount)
                 .completedSubtaskCount(completedSubtaskCount)
                 .attachmentCount(attachmentCount)
                 .reminderCount(reminderCount)
-
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
                 .build();
     }
+
     public TaskDetailsResponse toDetailsResponse(Task entity) {
         if (entity == null) {
             return null;
@@ -328,6 +326,7 @@ public class TaskMapper {
                 .recurrenceInterval(entity.getRecurrenceInterval())
                 .recurrenceLastGeneratedAt(entity.getRecurrenceLastGeneratedAt())
                 .nextOccurrenceAt(entity.getNextOccurrenceAt())
+                .notificationsEnabled(entity.getNotificationsEnabled())
                 .completedAt(entity.getCompletedAt())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
@@ -447,9 +446,9 @@ public class TaskMapper {
 
     private boolean isOverdue(Task task) {
         return task != null
-                && task.getDueDateTime() != null
-                && task.getStatus() != TaskStatus.COMPLETED
-                && task.getDueDateTime().isBefore(LocalDateTime.now());
+               && task.getDueDateTime() != null
+               && task.getStatus() != TaskStatus.COMPLETED
+               && task.getDueDateTime().isBefore(LocalDateTime.now());
     }
 
     public boolean isDueToday(Task task) {

@@ -8,7 +8,7 @@ import com.studentbag.backend.courses.sync.mapper.*;
 import com.studentbag.backend.courses.sync.service.RitajFetchService;
 import com.studentbag.backend.courses.sync.service.RitajParserService;
 import com.studentbag.backend.courses.sync.service.RitajSyncService;
-import com.studentbag.backend.domain.enums.SectionType;
+import com.studentbag.backend.domain.enums.courses.SectionType;
 import com.studentbag.backend.domain.enums.UserRole;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.institution.repository.InstitutionRepository;

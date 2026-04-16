@@ -1,9 +1,8 @@
 package com.studentbag.backend.tasks.dto.response;
 
-
-import com.studentbag.backend.domain.enums.TaskPriority;
-import com.studentbag.backend.domain.enums.TaskRecurrenceType;
-import com.studentbag.backend.domain.enums.TaskStatus;
+import com.studentbag.backend.domain.enums.tasks.TaskPriority;
+import com.studentbag.backend.domain.enums.tasks.TaskRecurrenceType;
+import com.studentbag.backend.domain.enums.tasks.TaskStatus;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -27,6 +26,7 @@ public class TaskResponse {
     private Boolean deleted;
     private Boolean completed;
     private Boolean overdue;
+    private Boolean notificationsEnabled;
 
     private LocalDateTime completedAt;
     private Integer estimatedMinutes;

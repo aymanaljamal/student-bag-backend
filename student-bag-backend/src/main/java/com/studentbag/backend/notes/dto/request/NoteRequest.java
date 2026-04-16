@@ -1,7 +1,7 @@
 package com.studentbag.backend.notes.dto.request;
 
-import com.studentbag.backend.domain.enums.NotePriority;
-import com.studentbag.backend.domain.enums.NoteType;
+import com.studentbag.backend.domain.enums.notes.NotePriority;
+import com.studentbag.backend.domain.enums.notes.NoteType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;

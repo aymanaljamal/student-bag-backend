@@ -2,7 +2,7 @@ package com.studentbag.backend.schedule.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
 import com.studentbag.backend.courses.entity.Term;
-import com.studentbag.backend.domain.enums.ScheduleStatus;
+import com.studentbag.backend.domain.enums.schedule.ScheduleStatus;
 import com.studentbag.backend.student.entity.Student;
 import jakarta.persistence.*;
 import lombok.*;

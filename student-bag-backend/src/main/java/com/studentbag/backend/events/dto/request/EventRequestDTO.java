@@ -1,6 +1,6 @@
 package com.studentbag.backend.events.dto.request;
 
-import com.studentbag.backend.domain.enums.EventType;
+import com.studentbag.backend.domain.enums.schedule.EventType;
 import com.studentbag.backend.events.dto.response.OpportunityDetailsDTO;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;

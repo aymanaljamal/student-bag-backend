@@ -1,7 +1,7 @@
 package com.studentbag.backend.courses.dto.response;
 
 import com.studentbag.backend.courses.dto.CourseSectionDetailedDTO;
-import com.studentbag.backend.domain.enums.AcademicLevel;
+import com.studentbag.backend.domain.enums.courses.AcademicLevel;
 import lombok.Builder;
 import lombok.Data;
 

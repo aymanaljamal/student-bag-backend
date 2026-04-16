@@ -1,6 +1,6 @@
 package com.studentbag.backend.events.dto.response;
 
-import com.studentbag.backend.domain.enums.EventType;
+import com.studentbag.backend.domain.enums.schedule.EventType;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -16,7 +16,7 @@ public class EventResponseDTO {
     private String title;
     private String description;
     private EventType eventType;
-
+    private Boolean isEnded;
     private LocalDateTime startDateTime;
     private LocalDateTime endDateTime;
 

@@ -45,8 +45,8 @@ public class AdminUserManagementController {
         return adminUserManagementService.createStudent(request);
     }
 
-    //@PostMapping("/instructors")
- //   public AuthResponse createInstructor(@Valid @RequestBody InstructorRegisterRequest request) {
-   //     return adminUserManagementService.createInstructor(request);
-   // }
+    @PostMapping("/instructors")
+    public AuthResponse createInstructor(@Valid @RequestBody InstructorRegisterRequest request) {
+       return adminUserManagementService.createInstructor(request);
+    }
 }

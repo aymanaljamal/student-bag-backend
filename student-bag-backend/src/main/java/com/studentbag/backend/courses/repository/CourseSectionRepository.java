@@ -3,7 +3,7 @@ package com.studentbag.backend.courses.repository;
 import com.studentbag.backend.courses.entity.Course;
 import com.studentbag.backend.courses.entity.CourseSection;
 import com.studentbag.backend.courses.entity.Term;
-import com.studentbag.backend.domain.enums.SectionType;
+import com.studentbag.backend.domain.enums.courses.SectionType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 

@@ -1,7 +1,7 @@
 package com.studentbag.backend.resources.repository;
 
 import com.studentbag.backend.domain.enums.ContentFormat;
-import com.studentbag.backend.domain.enums.ResourceType;
+import com.studentbag.backend.domain.enums.resources.ResourceType;
 import com.studentbag.backend.resources.entity.LearningObject;
 import org.springframework.data.jpa.repository.JpaRepository;
 

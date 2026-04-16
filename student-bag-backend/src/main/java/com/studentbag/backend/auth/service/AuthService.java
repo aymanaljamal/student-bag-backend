@@ -11,7 +11,7 @@ public interface AuthService {
     AuthResponse registerStudent(StudentRegisterRequest request);
 
 
-   // AuthResponse registerInstructor(InstructorRegisterRequest request);
+    AuthResponse registerInstructor(InstructorRegisterRequest request);
 
     AuthResponse registerAdministrator(AdministratorRegisterRequest request);
 

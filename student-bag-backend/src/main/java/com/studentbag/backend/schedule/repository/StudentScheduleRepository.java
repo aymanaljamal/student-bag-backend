@@ -1,6 +1,6 @@
 package com.studentbag.backend.schedule.repository;
 
-import com.studentbag.backend.domain.enums.ScheduleStatus;
+import com.studentbag.backend.domain.enums.schedule.ScheduleStatus;
 import com.studentbag.backend.schedule.entity.StudentSchedule;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -12,6 +12,10 @@ import java.util.Optional;
 
 @Repository
 public interface StudentScheduleRepository extends JpaRepository<StudentSchedule, Long> {
+    Optional<StudentSchedule> findFirstByStudentIdAndStatusOrderByIdDesc(
+            Long studentId,
+            ScheduleStatus status
+    );
     /**
      * Finds all schedules belonging to a specific student.
      * Resolves: Cannot resolve method 'findAllByStudentId'

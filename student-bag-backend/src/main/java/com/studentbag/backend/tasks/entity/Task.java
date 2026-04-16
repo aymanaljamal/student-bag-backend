@@ -2,9 +2,9 @@ package com.studentbag.backend.tasks.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
 import com.studentbag.backend.courses.entity.Course;
-import com.studentbag.backend.domain.enums.TaskPriority;
-import com.studentbag.backend.domain.enums.TaskRecurrenceType;
-import com.studentbag.backend.domain.enums.TaskStatus;
+import com.studentbag.backend.domain.enums.tasks.TaskPriority;
+import com.studentbag.backend.domain.enums.tasks.TaskRecurrenceType;
+import com.studentbag.backend.domain.enums.tasks.TaskStatus;
 import com.studentbag.backend.student.entity.Student;
 import jakarta.persistence.*;
 import lombok.*;
@@ -36,7 +36,9 @@ public class Task extends BaseEntity {
     @Column(nullable = false, length = 20)
     @Builder.Default
     private TaskPriority priority = TaskPriority.MEDIUM;
-
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean notificationsEnabled = true;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default

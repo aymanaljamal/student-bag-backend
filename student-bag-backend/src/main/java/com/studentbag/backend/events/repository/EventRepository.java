@@ -1,6 +1,6 @@
 package com.studentbag.backend.events.repository;
 
-import com.studentbag.backend.domain.enums.EventType;
+import com.studentbag.backend.domain.enums.schedule.EventType;
 import com.studentbag.backend.events.entity.Event;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -15,7 +15,18 @@ import java.util.List;
 @Repository
 public interface EventRepository extends JpaRepository<Event, Long> {
 
-    // FR-9.3: Filter events by multiple criteria (Title, Type, Department, Location)
+    @Query("""
+    select e
+    from Event e
+    where e.startDateTime is not null
+      and e.startDateTime >= :from
+      and e.startDateTime < :to
+""")
+    List<Event> findEventsStartingBetween(
+            @Param("from") LocalDateTime from,
+            @Param("to") LocalDateTime to
+    );
+
     @Query("SELECT e FROM Event e WHERE " +
             "(:type IS NULL OR e.eventType = :type) AND " +
             "(:dept IS NULL OR e.department = :dept) AND " +

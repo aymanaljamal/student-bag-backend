@@ -1,7 +1,7 @@
 package com.studentbag.backend.tasks.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
-import com.studentbag.backend.domain.enums.TaskAttachmentType;
+import com.studentbag.backend.domain.enums.tasks.TaskAttachmentType;
 import jakarta.persistence.*;
 import lombok.*;
 

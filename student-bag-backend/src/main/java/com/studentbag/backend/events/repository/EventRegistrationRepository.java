@@ -1,6 +1,6 @@
 package com.studentbag.backend.events.repository;
 
-import com.studentbag.backend.domain.enums.RegistrationStatus;
+import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
 import com.studentbag.backend.events.entity.EventRegistration;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -19,7 +19,7 @@ public interface EventRegistrationRepository extends JpaRepository<EventRegistra
 
     // FR-9.4: Count active registrations to enforce capacity limits
     long countByEventIdAndStatusIn(Long eventId, List<RegistrationStatus> activeStatuses);
-
+    void deleteByEventId(Long eventId);
     // Find registrations for students who need Smart Schedule notifications (FR-9.5)
     List<EventRegistration> findAllByEventIdAndStatus(Long eventId, RegistrationStatus status);
 }
