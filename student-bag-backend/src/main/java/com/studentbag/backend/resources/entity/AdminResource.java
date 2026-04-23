@@ -2,61 +2,84 @@ package com.studentbag.backend.resources.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
 import com.studentbag.backend.courses.entity.Course;
-import com.studentbag.backend.courses.entity.Term;
-import com.studentbag.backend.domain.enums.VisibilityScope;
-import com.studentbag.backend.institution.entity.Institution;
+import com.studentbag.backend.domain.enums.resources.ResourceApprovalStatus;
+import com.studentbag.backend.domain.enums.resources.ResourceCategory;
+import com.studentbag.backend.domain.enums.resources.ResourceOwnerType;
+import com.studentbag.backend.domain.enums.resources.ResourceType;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-
-import java.time.LocalDateTime;
+import lombok.*;
 
 @Entity
 @Table(name = "admin_resources")
 @Getter
 @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class AdminResource extends BaseEntity {
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "learning_object_id", nullable = false)
-    private LearningObject learningObject;
+    @Column(nullable = false)
+    private String title;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "institution_id", nullable = false)
-    private Institution institution;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "term_id")
-    private Term term;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "course_id")
-    private Course course;
-
-    private String gradeOrLevel;
+    @Column(columnDefinition = "TEXT")
+    private String description;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private VisibilityScope visibilityScope;
+    @Column(name = "resource_type", nullable = false, length = 30)
+    private ResourceType resourceType;
 
-    @Column(nullable = false)
-    private Integer version = 1;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 50)
+    private ResourceCategory category;
 
-    @Column(nullable = false)
-    private Boolean isApproved = false;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "approval_status", nullable = false, length = 30)
+    private ResourceApprovalStatus approvalStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "uploaded_by_type", nullable = false, length = 20)
+    private ResourceOwnerType uploadedByType;
+
+    @Column(name = "uploaded_by_id", nullable = false)
+    private Long uploadedById;
 
     @Column(name = "approved_by_admin_id")
     private Long approvedByAdminId;
 
-    private LocalDateTime approvedAt;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "learning_object_id")
+    private LearningObject learningObject;
 
-    public void approve(Long adminId) {
-        this.isApproved = true;
-        this.approvedByAdminId = adminId;
-        this.approvedAt = LocalDateTime.now();
-    }
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_id", nullable = false)
+    private Course course;
 
-    public void updateVersion() {
-        this.version = this.version + 1;
-    }
+    @Column(name = "file_url")
+    private String fileUrl;
+
+    @Column(name = "external_link")
+    private String externalLink;
+
+    @Column(name = "thumbnail_url")
+    private String thumbnailUrl;
+
+    @Column(name = "mime_type")
+    private String mimeType;
+
+    @Column(name = "file_name")
+    private String fileName;
+
+    @Column(name = "file_size_bytes")
+    private Long fileSizeBytes;
+
+    @Builder.Default
+    @Column(name = "is_visible", nullable = false)
+    private Boolean isVisible = false;
+
+    @Builder.Default
+    @Column(name = "is_deleted", nullable = false)
+    private Boolean isDeleted = false;
+
+    @Column(name = "admin_notes", columnDefinition = "TEXT")
+    private String adminNotes;
 }

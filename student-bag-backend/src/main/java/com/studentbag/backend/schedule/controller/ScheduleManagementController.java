@@ -1,6 +1,7 @@
 package com.studentbag.backend.schedule.controller;
 
 import com.studentbag.backend.schedule.dto.request.UpdateScheduleRequest;
+import com.studentbag.backend.schedule.dto.response.ActiveScheduleCourseDTO;
 import com.studentbag.backend.schedule.dto.response.StudentScheduleViewerResponseDTO;
 import com.studentbag.backend.schedule.dto.response.UpdateScheduleResponseDTO;
 import com.studentbag.backend.schedule.service.ScheduleManagementService;
@@ -90,6 +91,18 @@ public class ScheduleManagementController {
         Long studentId = getCurrentStudentId(userDetails);
         return ResponseEntity.ok(
                 managementService.updateScheduleEntries(scheduleId, studentId, request)
+        );
+    }
+
+    @GetMapping("/term/{termId}/active/courses")
+    public ResponseEntity<List<ActiveScheduleCourseDTO>> getActiveScheduleCourses(
+            @PathVariable Long termId,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        Long studentId = getCurrentStudentId(userDetails);
+
+        return ResponseEntity.ok(
+                managementService.getActiveScheduleCourses(studentId, termId)
         );
     }
 }

@@ -1,6 +1,6 @@
 package com.studentbag.backend.auth.dto.request;
 
-import com.studentbag.backend.courses.entity.Department;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -12,5 +12,11 @@ public class InstructorRegisterRequest extends BaseRegisterRequest {
     @NotNull
     private Long institutionId;
 
-    private Department department;
+    @NotNull
+    private Long departmentId;
+
+    @NotBlank
+    private String fullNameArabic;
+
+    private String fullNameEnglish;
 }

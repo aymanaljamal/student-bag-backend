@@ -48,4 +48,5 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findByStudentIdAndCourseIdAndIsDeletedFalse(Long studentId, Long courseId);
 
     Optional<Task> findByIdAndStudentIdAndIsDeletedFalse(Long id, Long studentId);
+
 }

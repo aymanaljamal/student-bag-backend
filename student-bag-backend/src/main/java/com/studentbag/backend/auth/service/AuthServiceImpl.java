@@ -7,6 +7,8 @@ import com.studentbag.backend.auth.dto.request.InstructorRegisterRequest;
 import com.studentbag.backend.auth.dto.request.LoginRequest;
 import com.studentbag.backend.auth.dto.request.StudentRegisterRequest;
 import com.studentbag.backend.auth.dto.response.AuthResponse;
+import com.studentbag.backend.courses.entity.Department;
+import com.studentbag.backend.courses.repository.DepartmentRepository;
 import com.studentbag.backend.domain.enums.UserRole;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.institution.repository.InstitutionRepository;
@@ -34,6 +36,7 @@ public class AuthServiceImpl implements AuthService {
     private final InstitutionRepository institutionRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final DepartmentRepository departmentRepository;
     private final JwtService jwtService;
 
     @Override
@@ -57,29 +60,43 @@ public class AuthServiceImpl implements AuthService {
 
         return buildAuthResponse(user);
     }
+    @Override
+    public AuthResponse registerInstructor(InstructorRegisterRequest request) {
+        validateEmail(request.getEmail());
 
-@Override
- public AuthResponse registerInstructor(InstructorRegisterRequest request) {
-     validateEmail(request.getEmail());
+        Institution institution = institutionRepository.findById(request.getInstitutionId())
+                .orElseThrow(() -> new RuntimeException("Institution not found"));
 
-    Institution institution = institutionRepository.findById(request.getInstitutionId())
-             .orElseThrow(() -> new RuntimeException("Institution not found"));
+        Department department = departmentRepository.findById(request.getDepartmentId())
+                .orElseThrow(() -> new RuntimeException("Department not found"));
 
-      User user = userRepository.save(buildBaseUser(
-               request.getFullName(),
-           request.getEmail(),
-              request.getPhone(),
+        String fullNameArabic = request.getFullNameArabic().trim();
+        String fullNameEnglish = request.getFullNameEnglish() == null
+                ? null
+                : request.getFullNameEnglish().trim();
+
+        User user = userRepository.save(buildBaseUser(
+                fullNameArabic,
+                request.getEmail(),
+                request.getPhone(),
                 request.getPassword(),
                 UserRole.INSTRUCTOR
         ));
 
-       instructorRepository.save(Instructor.builder()
-               .user(user)
-               .department(request.getDepartment())
-               .institution(institution)
+        instructorRepository.save(Instructor.builder()
+                .user(user)
+                .institution(institution)
+                .department(department)
+                .fullNameArabic(fullNameArabic)
+                .fullNameEnglish(
+                        fullNameEnglish == null || fullNameEnglish.isBlank()
+                                ? fullNameArabic
+                                : fullNameEnglish
+                )
+                .accountConfirmed(false)
                 .build());
 
-      return buildAuthResponse(user);
+        return buildAuthResponse(user);
     }
 
     @Override

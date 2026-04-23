@@ -1,13 +1,9 @@
 package com.studentbag.backend.domain.enums.resources;
 
 public enum ResourceType {
-    SUMMARY,
-    SLIDES,
-    EXAM,
-    ASSIGNMENT,
-    RECORDING,
-    ARTICLE,
-    BOOK,
-    NOTE,
-    OTHER
+    FILE,
+    IMAGE,
+    LINK,
+    NOTE_REFERENCE,
+    TASK_REFERENCE
 }

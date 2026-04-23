@@ -45,4 +45,7 @@ public interface StudentScheduleRepository extends JpaRepository<StudentSchedule
     @Query("UPDATE StudentSchedule s SET s.status = 'ARCHIVED' " +
             "WHERE s.student.id = :studentId AND s.term.id = :termId AND s.id <> :activeScheduleId")
     void archiveOldSchedules(Long studentId, Long termId, Long activeScheduleId);
+
+
+
 }

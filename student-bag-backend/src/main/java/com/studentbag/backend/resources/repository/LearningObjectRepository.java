@@ -1,7 +1,6 @@
 package com.studentbag.backend.resources.repository;
 
-import com.studentbag.backend.domain.enums.ContentFormat;
-import com.studentbag.backend.domain.enums.resources.ResourceType;
+import com.studentbag.backend.domain.enums.resources.ResourceCategory;
 import com.studentbag.backend.resources.entity.LearningObject;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -9,11 +8,12 @@ import java.util.List;
 
 public interface LearningObjectRepository extends JpaRepository<LearningObject, Long> {
 
-    List<LearningObject> findByIsActiveTrue();
+    List<LearningObject> findByCourseIdAndIsActiveTrue(Long courseId);
 
-    List<LearningObject> findByResourceTypeAndIsActiveTrue(ResourceType resourceType);
+    List<LearningObject> findByDepartmentNameIgnoreCaseAndIsActiveTrue(String departmentName);
 
-    List<LearningObject> findByFormatAndIsActiveTrue(ContentFormat format);
-
-    List<LearningObject> findByTitleContainingIgnoreCaseAndIsActiveTrue(String title);
+    List<LearningObject> findByCourseIdAndCategoryAndIsActiveTrue(
+            Long courseId,
+         ResourceCategory category
+    );
 }

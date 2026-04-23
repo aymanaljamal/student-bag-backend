@@ -1,6 +1,7 @@
 package com.studentbag.backend.schedule.service;
 
 import com.studentbag.backend.schedule.dto.request.UpdateScheduleRequest;
+import com.studentbag.backend.schedule.dto.response.ActiveScheduleCourseDTO;
 import com.studentbag.backend.schedule.dto.response.StudentScheduleResponseDTO;
 import com.studentbag.backend.schedule.dto.response.UpdateScheduleResponseDTO;
 
@@ -16,4 +17,6 @@ public interface ScheduleManagementService {
                                                         Long studentId,
                                                         UpdateScheduleRequest request
     );
+    List<ActiveScheduleCourseDTO> getActiveScheduleCourses(Long studentId, Long termId);
+
 }

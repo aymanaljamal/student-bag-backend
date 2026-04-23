@@ -1,25 +1,46 @@
 package com.studentbag.backend.resources.dto.response;
 
-import com.studentbag.backend.domain.enums.ContentFormat;
+import com.studentbag.backend.domain.enums.resources.ResourceCategory;
+import com.studentbag.backend.domain.enums.resources.ResourceType;
 import lombok.Builder;
-import lombok.Getter;
+import lombok.Data;
 
 import java.time.LocalDateTime;
 
-@Getter
+@Data
 @Builder
 public class PersonalResourceItemResponse {
-
     private Long id;
-    private Long ownerStudentId;
-    private Long folderId;
     private String title;
-    private ContentFormat format;
-    private Boolean isExamPreparation;
-    private Boolean isImportant;
-    private Long linkedAdminResourceId;
-    private Long noteId;
+    private String description;
+
+    private ResourceType resourceType;
+    private ResourceCategory category;
+
+    private Long studentId;
+    private Long folderId;
+
+    private Long courseId;
+    private String courseCode;
+    private String courseNameArabic;
+    private String courseNameEnglish;
+
     private String fileUrl;
+    private String externalLink;
+    private String thumbnailUrl;
+    private String mimeType;
+    private String fileName;
+    private Long fileSizeBytes;
+
+    private Long copiedFromAdminResourceId;
+    private Long copiedFromPersonalItemId;
+
+    private Long linkedNoteId;
+    private Long linkedTaskId;
+
+    private Boolean isDeleted;
+    private Boolean isArchived;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

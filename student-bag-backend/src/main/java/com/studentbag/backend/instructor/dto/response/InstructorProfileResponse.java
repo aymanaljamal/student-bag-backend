@@ -1,14 +1,10 @@
 package com.studentbag.backend.instructor.dto.response;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 @Data
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class InstructorProfileResponse {
 
     private Long id;
@@ -28,6 +24,10 @@ public class InstructorProfileResponse {
     private String phone;
     private String avatarUrl;
 
-    private Boolean accountConfirmed;
-    private Boolean active;
+    private String languageCode;
+
+    private boolean accountConfirmed;
+    private boolean active;
+    private boolean emailVerified;
+    private boolean phoneVerified;
 }
