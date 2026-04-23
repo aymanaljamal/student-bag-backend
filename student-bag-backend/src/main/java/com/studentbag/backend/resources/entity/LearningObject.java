@@ -1,19 +1,27 @@
 package com.studentbag.backend.resources.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
-import com.studentbag.backend.domain.enums.courses.AcademicLevel;
-import com.studentbag.backend.domain.enums.ContentFormat;
-import com.studentbag.backend.domain.enums.LanguageCode;
-import com.studentbag.backend.domain.enums.resources.ResourceType;
+import com.studentbag.backend.courses.entity.Course;
+import com.studentbag.backend.domain.enums.resources.ResourceCategory;
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.*;
 
 @Entity
 @Table(name = "learning_objects")
 @Getter
 @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class LearningObject extends BaseEntity {
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_id", nullable = false)
+    private Course course;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 50)
+    private ResourceCategory category;
 
     @Column(nullable = false)
     private String title;
@@ -21,45 +29,10 @@ public class LearningObject extends BaseEntity {
     @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(length = 1000)
-    private String keywords;
+    @Column(name = "department_name", nullable = false)
+    private String departmentName;
 
-    @Enumerated(EnumType.STRING)
-    private LanguageCode language;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private ContentFormat format;
-
-    private String difficulty;
-
-    private String intendedEndUserRole;
-
-    @Enumerated(EnumType.STRING)
-    private AcademicLevel educationalLevel;
-
-    @Enumerated(EnumType.STRING)
-    private ResourceType resourceType;
-
-    private Integer typicalLearningTimeMinutes;
-
-    @Column(length = 1000)
-    private String url;
-
-    @Column(length = 1000)
-    private String thumbnailUrl;
-
-    @Column(nullable = false)
+    @Builder.Default
+    @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
-
-    @Column(name = "created_by_user_id")
-    private Long createdByUserId;
-
-    public boolean search(String text) {
-        String query = text == null ? "" : text.toLowerCase();
-
-        return (title != null && title.toLowerCase().contains(query))
-                || (description != null && description.toLowerCase().contains(query))
-                || (keywords != null && keywords.toLowerCase().contains(query));
-    }
 }

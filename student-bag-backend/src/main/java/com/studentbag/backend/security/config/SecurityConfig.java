@@ -34,6 +34,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/register/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/institutions/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/faculties/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/departments/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/test/public").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/courses/all").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/departments/all").permitAll()

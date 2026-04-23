@@ -1,10 +1,12 @@
 package com.studentbag.backend.schedule.service.impl;
 
+import com.studentbag.backend.courses.entity.Course;
 import com.studentbag.backend.domain.enums.schedule.ScheduleSourceType;
 import com.studentbag.backend.domain.enums.schedule.ScheduleStatus;
 import com.studentbag.backend.schedule.dto.ConflictDTO;
 import com.studentbag.backend.schedule.dto.request.UpdateScheduleEntryRequest;
 import com.studentbag.backend.schedule.dto.request.UpdateScheduleRequest;
+import com.studentbag.backend.schedule.dto.response.ActiveScheduleCourseDTO;
 import com.studentbag.backend.schedule.dto.response.StudentScheduleResponseDTO;
 import com.studentbag.backend.schedule.dto.response.UpdateScheduleResponseDTO;
 import com.studentbag.backend.schedule.entity.ScheduleEntry;
@@ -189,5 +191,34 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
             }
         }
         return conflicts;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<ActiveScheduleCourseDTO> getActiveScheduleCourses(Long studentId, Long termId) {
+        StudentSchedule activeSchedule = scheduleRepository
+                .findByStudentIdAndTermIdAndStatus(studentId, termId, ScheduleStatus.ACTIVE)
+                .orElseThrow(() -> new RuntimeException("Active schedule not found for this term"));
+
+        return activeSchedule.getEntries().stream()
+                .filter(entry -> entry.getSourceType() == ScheduleSourceType.COURSE)
+                .filter(entry -> entry.getCourseSection() != null)
+                .filter(entry -> entry.getCourseSection().getCourse() != null)
+                .map(entry -> entry.getCourseSection().getCourse())
+                .distinct()
+                .map(this::mapCourseToDTO)
+                .toList();
+    }
+
+    private ActiveScheduleCourseDTO mapCourseToDTO(Course course) {
+        return ActiveScheduleCourseDTO.builder()
+                .id(course.getId())
+                .externalId(course.getExternalId())
+                .code(course.getCode())
+                .nameArabic(course.getNameArabic())
+                .nameEnglish(course.getNameEnglish())
+                .description(course.getDescription())
+                .creditHours(course.getCreditHours())
+                .build();
     }
 }

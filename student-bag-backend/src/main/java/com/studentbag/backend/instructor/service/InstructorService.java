@@ -1,5 +1,6 @@
 package com.studentbag.backend.instructor.service;
 
+import com.studentbag.backend.instructor.dto.request.InstructorUpdateProfileRequest;
 import com.studentbag.backend.instructor.dto.response.InstructorProfileResponse;
 
 public interface InstructorService {
@@ -7,4 +8,9 @@ public interface InstructorService {
     InstructorProfileResponse getPublicProfile(Long instructorId);
 
     InstructorProfileResponse getMyProfile(String currentUserEmail);
+
+    InstructorProfileResponse updateMyProfile(
+            String currentUserEmail,
+            InstructorUpdateProfileRequest request
+    );
 }
