@@ -2,6 +2,7 @@ package com.studentbag.backend.notifications.controller;
 
 import com.studentbag.backend.notifications.dto.request.CreateAdminNotificationRequest;
 import com.studentbag.backend.notifications.dto.request.SaveDeviceTokenRequest;
+import com.studentbag.backend.notifications.dto.response.DeleteNotificationsResponse;
 import com.studentbag.backend.notifications.dto.response.NotificationResponse;
 import com.studentbag.backend.notifications.dto.response.UnreadCountResponse;
 import com.studentbag.backend.notifications.service.DeviceTokenService;
@@ -36,7 +37,26 @@ public class NotificationController {
 
         return user.getId();
     }
+    @DeleteMapping("/me/{userNotificationId}")
+    public ResponseEntity<DeleteNotificationsResponse> deleteMyNotification(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @PathVariable UUID userNotificationId
+    ) {
+        UUID userId = getCurrentUserId(userDetails);
+        return ResponseEntity.ok(
+                notificationService.deleteMyNotification(userId, userNotificationId)
+        );
+    }
 
+    @DeleteMapping("/me")
+    public ResponseEntity<DeleteNotificationsResponse> deleteAllMyNotifications(
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        UUID userId = getCurrentUserId(userDetails);
+        return ResponseEntity.ok(
+                notificationService.deleteAllMyNotifications(userId)
+        );
+    }
     @PreAuthorize("hasRole('ADMINISTRATOR')")
     @PostMapping("/admin/send")
     public ResponseEntity<NotificationResponse> sendAdminNotification(

@@ -55,6 +55,7 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
     }
 
     @Override
+
     @Transactional
     public void archiveSchedule(Long scheduleId, Long studentId) {
         StudentSchedule schedule = findAndValidate(scheduleId, studentId);
@@ -204,12 +205,42 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
                 .filter(entry -> entry.getSourceType() == ScheduleSourceType.COURSE)
                 .filter(entry -> entry.getCourseSection() != null)
                 .filter(entry -> entry.getCourseSection().getCourse() != null)
-                .map(entry -> entry.getCourseSection().getCourse())
-                .distinct()
-                .map(this::mapCourseToDTO)
+                .collect(Collectors.toMap(
+                        entry -> entry.getCourseSection().getCourse().getId(),
+                        this::mapEntryToActiveCourseDTO,
+                        (first, second) -> first
+                ))
+                .values()
+                .stream()
                 .toList();
     }
+    private ActiveScheduleCourseDTO mapEntryToActiveCourseDTO(ScheduleEntry entry) {
+        Course course = entry.getCourseSection().getCourse();
 
+        Long instructorId = null;
+        String instructorNameArabic = null;
+        String instructorNameEnglish = null;
+
+        if (entry.getCourseSection().getInstructor() != null) {
+            instructorId = entry.getCourseSection().getInstructor().getId();
+            instructorNameArabic = entry.getCourseSection().getInstructor().getFullNameArabic();
+            instructorNameEnglish = entry.getCourseSection().getInstructor().getFullNameEnglish();
+        }
+
+        return ActiveScheduleCourseDTO.builder()
+                .id(course.getId())
+                .externalId(course.getExternalId())
+                .code(course.getCode())
+                .nameArabic(course.getNameArabic())
+                .nameEnglish(course.getNameEnglish())
+                .description(course.getDescription())
+                .creditHours(course.getCreditHours())
+                .courseSectionId(entry.getCourseSection().getId())
+                .instructorId(instructorId)
+                .instructorNameArabic(instructorNameArabic)
+                .instructorNameEnglish(instructorNameEnglish)
+                .build();
+    }
     private ActiveScheduleCourseDTO mapCourseToDTO(Course course) {
         return ActiveScheduleCourseDTO.builder()
                 .id(course.getId())

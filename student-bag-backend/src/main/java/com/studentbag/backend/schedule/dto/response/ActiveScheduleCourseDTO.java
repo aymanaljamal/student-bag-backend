@@ -17,4 +17,9 @@ public class ActiveScheduleCourseDTO {
     private String nameEnglish;
     private String description;
     private Integer creditHours;
+
+    private Long courseSectionId;
+    private Long instructorId;
+    private String instructorNameArabic;
+    private String instructorNameEnglish;
 }

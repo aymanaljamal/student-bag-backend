@@ -1,7 +1,6 @@
 package com.studentbag.backend.events.mapper;
 
 import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
-
 import com.studentbag.backend.events.dto.request.EventRequestDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;
 import com.studentbag.backend.events.dto.response.OpportunityDetailsDTO;
@@ -20,15 +19,15 @@ public class EventMapper {
         }
 
         return Event.builder()
-                .title(request.getTitle())
-                .description(request.getDescription())
+                .title(clean(request.getTitle()))
+                .description(clean(request.getDescription()))
                 .eventType(request.getEventType())
                 .startDateTime(request.getStartDateTime())
                 .endDateTime(request.getEndDateTime())
-                .location(request.getLocation())
-                .department(request.getDepartment())
-                .host(request.getHost())
-                .imageUrl(request.getImageUrl())
+                .location(clean(request.getLocation()))
+                .department(clean(request.getDepartment()))
+                .host(clean(request.getHost()))
+                .imageUrl(clean(request.getImageUrl()))
                 .requiresRegistration(Boolean.TRUE.equals(request.getRequiresRegistration()))
                 .maxParticipants(request.getMaxParticipants())
                 .isOpportunity(Boolean.TRUE.equals(request.getIsOpportunity()))
@@ -40,15 +39,15 @@ public class EventMapper {
             return;
         }
 
-        event.setTitle(request.getTitle());
-        event.setDescription(request.getDescription());
+        event.setTitle(clean(request.getTitle()));
+        event.setDescription(clean(request.getDescription()));
         event.setEventType(request.getEventType());
         event.setStartDateTime(request.getStartDateTime());
         event.setEndDateTime(request.getEndDateTime());
-        event.setLocation(request.getLocation());
-        event.setDepartment(request.getDepartment());
-        event.setHost(request.getHost());
-        event.setImageUrl(request.getImageUrl());
+        event.setLocation(clean(request.getLocation()));
+        event.setDepartment(clean(request.getDepartment()));
+        event.setHost(clean(request.getHost()));
+        event.setImageUrl(clean(request.getImageUrl()));
         event.setRequiresRegistration(Boolean.TRUE.equals(request.getRequiresRegistration()));
         event.setMaxParticipants(request.getMaxParticipants());
         event.setIsOpportunity(Boolean.TRUE.equals(request.getIsOpportunity()));
@@ -64,12 +63,20 @@ public class EventMapper {
                 .title(event.getTitle())
                 .description(event.getDescription())
                 .eventType(event.getEventType())
+                .isEnded(event.isUpcoming() ? false : event.getEndDateTime().isBefore(java.time.LocalDateTime.now()))
                 .startDateTime(event.getStartDateTime())
                 .endDateTime(event.getEndDateTime())
                 .location(event.getLocation())
                 .department(event.getDepartment())
                 .host(event.getHost())
                 .imageUrl(event.getImageUrl())
+                .createdByUserId(event.getCreatedByUser() != null ? event.getCreatedByUser().getId() : null)
+                .createdByFullName(event.getCreatedByUser() != null ? event.getCreatedByUser().getFullName() : null)
+                .createdByRole(
+                        event.getCreatedByUser() != null && event.getCreatedByUser().getRole() != null
+                                ? event.getCreatedByUser().getRole().name()
+                                : null
+                )
                 .isOpportunity(event.getIsOpportunity())
                 .requiresRegistration(event.getRequiresRegistration())
                 .availableSlots(calculateAvailableSlots(event))
@@ -103,14 +110,14 @@ public class EventMapper {
 
         return Opportunity.builder()
                 .event(event)
-                .companyName(dto.getCompanyName())
-                .roleTitle(dto.getRoleTitle())
-                .field(dto.getField())
+                .companyName(clean(dto.getCompanyName()))
+                .roleTitle(clean(dto.getRoleTitle()))
+                .field(clean(dto.getField()))
                 .isPaid(Boolean.TRUE.equals(dto.getIsPaid()))
-                .workMode(dto.getWorkMode())
+                .workMode(clean(dto.getWorkMode()))
                 .applicationDeadline(dto.getApplicationDeadline())
                 .durationWeeks(dto.getDurationWeeks())
-                .applicationUrl(dto.getApplicationUrl())
+                .applicationUrl(clean(dto.getApplicationUrl()))
                 .build();
     }
 
@@ -148,5 +155,14 @@ public class EventMapper {
         }
 
         return Math.max(0, event.getMaxParticipants() - (int) activeRegistrations);
+    }
+
+    private String clean(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        return trimmed.isBlank() ? null : trimmed;
     }
 }

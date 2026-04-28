@@ -4,6 +4,7 @@ import com.studentbag.backend.domain.enums.schedule.EventType;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -19,7 +20,9 @@ public class EventResponseDTO {
     private Boolean isEnded;
     private LocalDateTime startDateTime;
     private LocalDateTime endDateTime;
-
+    private UUID createdByUserId;
+    private String createdByFullName;
+    private String createdByRole;
     private String location;
     private String department;
     private String host;
