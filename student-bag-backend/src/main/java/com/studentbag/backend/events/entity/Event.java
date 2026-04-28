@@ -4,6 +4,7 @@ import com.studentbag.backend.common.entity.BaseEntity;
 import com.studentbag.backend.domain.enums.schedule.EventType;
 import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
 import com.studentbag.backend.institution.entity.Institution;
+import com.studentbag.backend.users.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -29,7 +30,9 @@ public class Event extends BaseEntity {
 
     @Column(columnDefinition = "TEXT")
     private String description;
-
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_user_id")
+    private User createdByUser;
     @Enumerated(EnumType.STRING)
     @Column(name = "event_type", nullable = false)
     private EventType eventType;

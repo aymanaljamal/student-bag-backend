@@ -17,6 +17,8 @@ import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.institution.repository.InstitutionRepository;
 import com.studentbag.backend.student.entity.Student;
 import com.studentbag.backend.student.repository.StudentRepository;
+import com.studentbag.backend.users.entity.User;
+import com.studentbag.backend.users.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,51 +40,91 @@ public class EventServiceImpl implements EventService {
     private final EventRegistrationRepository registrationRepository;
     private final StudentRepository studentRepository;
     private final InstitutionRepository institutionRepository;
+    private final UserRepository userRepository;
     private final EventMapper eventMapper;
 
     @Override
-    public EventResponseDTO createEvent(EventRequestDTO request, Long institutionId) {
+    public EventResponseDTO createEvent(
+            EventRequestDTO request,
+            Long institutionId,
+            String currentUserEmail
+    ) {
         validateEventDates(request);
 
         Institution institution = getInstitutionById(institutionId);
+        User creator = getUserByEmail(currentUserEmail);
 
         Event event = eventMapper.toEntity(request);
         event.setInstitution(institution);
+        event.setCreatedByUser(creator);
+
+        if (event.getHost() == null || event.getHost().isBlank()) {
+            event.setHost(creator.getFullName());
+        }
 
         applyOpportunityDetails(event, request);
 
         Event savedEvent = eventRepository.save(event);
 
-        log.info("Created event with id={} for institutionId={}", savedEvent.getId(), institutionId);
+        log.info(
+                "Created event id={} institutionId={} createdByUser={}",
+                savedEvent.getId(),
+                institutionId,
+                creator.getId()
+        );
+
         return buildEventResponse(savedEvent, null);
     }
 
     @Override
-    public EventResponseDTO updateEvent(Long eventId, EventRequestDTO request, Long institutionId) {
+    public EventResponseDTO updateEvent(
+            Long eventId,
+            EventRequestDTO request,
+            Long institutionId,
+            String currentUserEmail
+    ) {
         validateEventDates(request);
 
+        User currentUser = getUserByEmail(currentUserEmail);
         Event existingEvent = getEventByIdOrThrow(eventId);
         Institution institution = getInstitutionById(institutionId);
 
         eventMapper.updateEntity(existingEvent, request);
         existingEvent.setInstitution(institution);
 
+        if (existingEvent.getCreatedByUser() == null) {
+            existingEvent.setCreatedByUser(currentUser);
+        }
+
+        if (existingEvent.getHost() == null || existingEvent.getHost().isBlank()) {
+            existingEvent.setHost(
+                    existingEvent.getCreatedByUser() != null
+                            ? existingEvent.getCreatedByUser().getFullName()
+                            : currentUser.getFullName()
+            );
+        }
+
         applyOpportunityDetails(existingEvent, request);
 
         Event savedEvent = eventRepository.save(existingEvent);
 
-        log.info("Updated event with id={}", savedEvent.getId());
+        log.info(
+                "Updated event id={} updatedByUser={}",
+                savedEvent.getId(),
+                currentUser.getId()
+        );
+
         return buildEventResponse(savedEvent, null);
     }
 
     @Override
     public EventResponseDTO finishEvent(Long eventId) {
         Event event = getEventByIdOrThrow(eventId);
-
         event.setEndDateTime(LocalDateTime.now());
 
         Event savedEvent = eventRepository.save(event);
-        log.info("Finished event with id={}", savedEvent.getId());
+
+        log.info("Finished event id={}", savedEvent.getId());
 
         return buildEventResponse(savedEvent, null);
     }
@@ -94,7 +136,7 @@ public class EventServiceImpl implements EventService {
         registrationRepository.deleteByEventId(eventId);
         eventRepository.delete(event);
 
-        log.info("Deleted event with id={}", eventId);
+        log.info("Deleted event id={}", eventId);
     }
 
     @Override
@@ -107,8 +149,12 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public List<EventResponseDTO> getAllEvents(Long studentId) {
-        return eventRepository.findAll().stream()
-                .sorted(Comparator.comparing(Event::getStartDateTime, Comparator.nullsLast(LocalDateTime::compareTo)))
+        return eventRepository.findAll()
+                .stream()
+                .sorted(Comparator.comparing(
+                        Event::getStartDateTime,
+                        Comparator.nullsLast(LocalDateTime::compareTo)
+                ))
                 .map(event -> buildEventResponse(event, studentId))
                 .toList();
     }
@@ -116,7 +162,8 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public List<EventResponseDTO> searchEvents(Long studentId, EventSearchRequestDTO request) {
-        return eventRepository.findAll().stream()
+        return eventRepository.findAll()
+                .stream()
                 .filter(event -> matchesSearch(event, request))
                 .sorted(buildComparator(request))
                 .map(event -> buildEventResponse(event, studentId))
@@ -126,7 +173,8 @@ public class EventServiceImpl implements EventService {
     @Override
     @Transactional(readOnly = true)
     public List<OpportunityResponseDTO> searchOpportunities(Long studentId, EventSearchRequestDTO request) {
-        return eventRepository.findAll().stream()
+        return eventRepository.findAll()
+                .stream()
                 .filter(event -> Boolean.TRUE.equals(event.getIsOpportunity()))
                 .filter(event -> matchesSearch(event, request))
                 .sorted(buildComparator(request))
@@ -142,7 +190,11 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
-    public void registerForEvent(Long eventId, Long studentId, EventRegistrationRequestDTO request) {
+    public void registerForEvent(
+            Long eventId,
+            Long studentId,
+            EventRegistrationRequestDTO request
+    ) {
         Event event = getEventByIdOrThrow(eventId);
         Student student = getStudentById(studentId);
 
@@ -161,7 +213,8 @@ public class EventServiceImpl implements EventService {
 
     @Override
     public void cancelRegistration(Long eventId, Long studentId) {
-        EventRegistration registration = registrationRepository.findByEventIdAndStudentId(eventId, studentId)
+        EventRegistration registration = registrationRepository
+                .findByEventIdAndStudentId(eventId, studentId)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Registration not found for event id: " + eventId + " and student id: " + studentId
                 ));
@@ -176,23 +229,32 @@ public class EventServiceImpl implements EventService {
         log.info("Sync with university API requested for institutionId={}", institutionId);
     }
 
-    // -------------------------------------------------------------------------
-    // Internal helpers
-    // -------------------------------------------------------------------------
-
     private Institution getInstitutionById(Long institutionId) {
         return institutionRepository.findById(institutionId)
-                .orElseThrow(() -> new ResourceNotFoundException("Institution not found with id: " + institutionId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Institution not found with id: " + institutionId
+                ));
     }
 
     private Student getStudentById(Long studentId) {
         return studentRepository.findById(studentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Student not found with id: " + studentId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Student not found with id: " + studentId
+                ));
+    }
+
+    private User getUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "User not found with email: " + email
+                ));
     }
 
     private Event getEventByIdOrThrow(Long eventId) {
         return eventRepository.findById(eventId)
-                .orElseThrow(() -> new ResourceNotFoundException("Event not found with id: " + eventId));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Event not found with id: " + eventId
+                ));
     }
 
     private void validateEventDates(EventRequestDTO request) {
@@ -204,8 +266,12 @@ public class EventServiceImpl implements EventService {
     }
 
     private void applyOpportunityDetails(Event event, EventRequestDTO request) {
-        if (Boolean.TRUE.equals(request.getIsOpportunity()) && request.getOpportunityDetails() != null) {
-            event.setOpportunity(eventMapper.toOpportunityEntity(request.getOpportunityDetails(), event));
+        if (Boolean.TRUE.equals(request.getIsOpportunity())
+                && request.getOpportunityDetails() != null) {
+            event.setOpportunity(eventMapper.toOpportunityEntity(
+                    request.getOpportunityDetails(),
+                    event
+            ));
             return;
         }
 
@@ -245,7 +311,8 @@ public class EventServiceImpl implements EventService {
     }
 
     private boolean isEventEnded(Event event) {
-        return event.getEndDateTime() != null && !event.getEndDateTime().isAfter(LocalDateTime.now());
+        return event.getEndDateTime() != null
+                && !event.getEndDateTime().isAfter(LocalDateTime.now());
     }
 
     private boolean matchesSearch(Event event, EventSearchRequestDTO request) {
@@ -262,6 +329,8 @@ public class EventServiceImpl implements EventService {
                         || containsIgnoreCase(event.getLocation(), request.getQuery())
                         || containsIgnoreCase(event.getDepartment(), request.getQuery())
                         || containsIgnoreCase(event.getHost(), request.getQuery())
+                        || (event.getCreatedByUser() != null
+                        && containsIgnoreCase(event.getCreatedByUser().getFullName(), request.getQuery()))
                         || (opportunity != null && (
                         containsIgnoreCase(opportunity.getCompanyName(), request.getQuery())
                                 || containsIgnoreCase(opportunity.getRoleTitle(), request.getQuery())
@@ -269,7 +338,8 @@ public class EventServiceImpl implements EventService {
                 ));
 
         boolean eventTypeMatches =
-                request.getEventType() == null || request.getEventType() == event.getEventType();
+                request.getEventType() == null
+                        || request.getEventType() == event.getEventType();
 
         boolean upcomingMatches =
                 request.getUpcomingOnly() == null
@@ -308,16 +378,19 @@ public class EventServiceImpl implements EventService {
 
     private boolean matchesStartDateRange(Event event, EventSearchRequestDTO request) {
         if (event.getStartDateTime() == null) {
-            return request.getStartDateFrom() == null && request.getStartDateTo() == null;
+            return request.getStartDateFrom() == null
+                    && request.getStartDateTo() == null;
         }
 
         LocalDate startDate = event.getStartDateTime().toLocalDate();
 
         boolean fromMatches =
-                request.getStartDateFrom() == null || !startDate.isBefore(request.getStartDateFrom());
+                request.getStartDateFrom() == null
+                        || !startDate.isBefore(request.getStartDateFrom());
 
         boolean toMatches =
-                request.getStartDateTo() == null || !startDate.isAfter(request.getStartDateTo());
+                request.getStartDateTo() == null
+                        || !startDate.isAfter(request.getStartDateTo());
 
         return fromMatches && toMatches;
     }
@@ -347,10 +420,16 @@ public class EventServiceImpl implements EventService {
 
         boolean deadlineMatches = matchesApplicationDeadlineRange(opportunity, request);
 
-        return appOpenMatches && paidMatches && workModeMatches && deadlineMatches;
+        return appOpenMatches
+                && paidMatches
+                && workModeMatches
+                && deadlineMatches;
     }
 
-    private boolean matchesApplicationDeadlineRange(Opportunity opportunity, EventSearchRequestDTO request) {
+    private boolean matchesApplicationDeadlineRange(
+            Opportunity opportunity,
+            EventSearchRequestDTO request
+    ) {
         if (opportunity.getApplicationDeadline() == null) {
             return request.getApplicationDeadlineFrom() == null
                     && request.getApplicationDeadlineTo() == null;
@@ -375,21 +454,28 @@ public class EventServiceImpl implements EventService {
 
         Comparator<Event> comparator;
 
-        String normalizedSortBy = isBlank(sortBy) ? "startDateTime" : sortBy.trim().toLowerCase();
+        String normalizedSortBy = isBlank(sortBy)
+                ? "startDateTime"
+                : sortBy.trim().toLowerCase();
 
         switch (normalizedSortBy) {
             case "title" -> comparator = Comparator.comparing(
                     Event::getTitle,
                     Comparator.nullsLast(String::compareToIgnoreCase)
             );
+
             case "createdat" -> comparator = Comparator.comparing(
                     Event::getCreatedAt,
                     Comparator.nullsLast(LocalDateTime::compareTo)
             );
+
             case "applicationdeadline" -> comparator = Comparator.comparing(
-                    event -> event.getOpportunity() != null ? event.getOpportunity().getApplicationDeadline() : null,
+                    event -> event.getOpportunity() != null
+                            ? event.getOpportunity().getApplicationDeadline()
+                            : null,
                     Comparator.nullsLast(LocalDate::compareTo)
             );
+
             default -> comparator = Comparator.comparing(
                     Event::getStartDateTime,
                     Comparator.nullsLast(LocalDateTime::compareTo)

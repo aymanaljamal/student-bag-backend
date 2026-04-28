@@ -39,6 +39,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/test/public").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/courses/all").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/departments/all").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/institutions/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/faculties/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/departments/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/terms/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/test/public").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/courses/all").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/departments/all").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/courses/search").permitAll()
 
                         .requestMatchers(
                                 "/v3/api-docs/**",

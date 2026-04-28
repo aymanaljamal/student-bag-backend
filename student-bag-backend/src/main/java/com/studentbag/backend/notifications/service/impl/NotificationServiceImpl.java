@@ -9,6 +9,7 @@ import com.studentbag.backend.events.repository.EventRepository;
 import com.studentbag.backend.notifications.dto.request.CreateAdminNotificationRequest;
 import com.studentbag.backend.notifications.dto.request.CreateNotificationRequest;
 import com.studentbag.backend.notifications.dto.request.NotificationAttachmentRequest;
+import com.studentbag.backend.notifications.dto.response.DeleteNotificationsResponse;
 import com.studentbag.backend.notifications.dto.response.NotificationResponse;
 import com.studentbag.backend.notifications.entity.Notification;
 import com.studentbag.backend.notifications.entity.NotificationAttachment;
@@ -392,5 +393,31 @@ public class NotificationServiceImpl implements NotificationService {
             case MONTHLY -> task.getNextOccurrenceAt().plusMonths(interval);
             default -> null;
         };
+    }
+
+    @Override
+    @Transactional
+    public DeleteNotificationsResponse deleteMyNotification(UUID userId, UUID userNotificationId) {
+        int deleted = userNotificationRepository.deleteOneForUser(userId, userNotificationId);
+
+        if (deleted == 0) {
+            throw new NotificationNotFoundException("Notification not found");
+        }
+
+        return DeleteNotificationsResponse.builder()
+                .deletedCount(deleted)
+                .message("Notification deleted successfully")
+                .build();
+    }
+
+    @Override
+    @Transactional
+    public DeleteNotificationsResponse deleteAllMyNotifications(UUID userId) {
+        int deleted = userNotificationRepository.deleteAllForUser(userId);
+
+        return DeleteNotificationsResponse.builder()
+                .deletedCount(deleted)
+                .message("All notifications deleted successfully")
+                .build();
     }
 }

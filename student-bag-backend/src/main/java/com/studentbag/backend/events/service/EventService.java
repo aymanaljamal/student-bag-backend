@@ -10,10 +10,9 @@ import java.util.List;
 
 public interface EventService {
 
-    EventResponseDTO createEvent(EventRequestDTO request, Long institutionId);
+    EventResponseDTO createEvent(EventRequestDTO request, Long institutionId, String currentUserEmail);
 
-    EventResponseDTO updateEvent(Long eventId, EventRequestDTO request, Long institutionId);
-
+    EventResponseDTO updateEvent(Long eventId, EventRequestDTO request, Long institutionId, String currentUserEmail);
     EventResponseDTO getEventById(Long eventId, Long studentId);
 
     List<EventResponseDTO> getAllEvents(Long studentId);
