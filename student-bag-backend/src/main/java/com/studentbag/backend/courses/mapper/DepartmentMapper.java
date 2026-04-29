@@ -9,7 +9,11 @@ import org.springframework.stereotype.Component;
 @Component
 public class DepartmentMapper {
 
-    public void toEntity(DepartmentRequestDTO request, Department department, Faculty faculty) {
+    public void toEntity(
+            DepartmentRequestDTO request,
+            Department department,
+            Faculty faculty
+    ) {
         department.setNameArabic(request.getNameArabic());
         department.setNameEnglish(request.getNameEnglish());
         department.setProgramNameArabic(request.getProgramNameArabic());
@@ -19,6 +23,8 @@ public class DepartmentMapper {
     }
 
     public DepartmentResponseDTO toResponse(Department department) {
+        Faculty faculty = department.getFaculty();
+
         return DepartmentResponseDTO.builder()
                 .id(department.getId())
                 .externalId(department.getExternalId())
@@ -26,7 +32,11 @@ public class DepartmentMapper {
                 .nameEnglish(department.getNameEnglish())
                 .programNameArabic(department.getProgramNameArabic())
                 .programNameEnglish(department.getProgramNameEnglish())
-                .facultyId(department.getFaculty().getId())
+                .facultyId(faculty.getId())
+                .facultyNameArabic(faculty.getNameArabic())
+                .facultyNameEnglish(faculty.getNameEnglish())
+                .institutionId(faculty.getInstitution().getId())
+                .institutionName(faculty.getInstitution().getName())
                 .isActive(department.getIsActive())
                 .build();
     }

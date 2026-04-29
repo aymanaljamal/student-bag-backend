@@ -72,8 +72,42 @@ public class FacultyServiceImpl implements FacultyService {
     }
 
     @Override
-    public Page<FacultyResponseDTO> search(String keyword, Long institutionId, Boolean isActive, Pageable pageable) {
-        // لاحقًا ممكن تضيف Specification للبحث
-        return facultyRepository.findAll(pageable).map(facultyMapper::toResponse);
+    public Page<FacultyResponseDTO> search(
+            String keyword,
+            Long institutionId,
+            Boolean isActive,
+            Pageable pageable
+    ) {
+        return facultyRepository.findAll((root, query, cb) -> {
+            var predicates = cb.conjunction();
+
+            if (keyword != null && !keyword.trim().isEmpty()) {
+                String like = "%" + keyword.trim().toLowerCase() + "%";
+
+                predicates = cb.and(
+                        predicates,
+                        cb.or(
+                                cb.like(cb.lower(root.get("nameArabic")), like),
+                                cb.like(cb.lower(root.get("nameEnglish")), like)
+                        )
+                );
+            }
+
+            if (institutionId != null) {
+                predicates = cb.and(
+                        predicates,
+                        cb.equal(root.get("institution").get("id"), institutionId)
+                );
+            }
+
+            if (isActive != null) {
+                predicates = cb.and(
+                        predicates,
+                        cb.equal(root.get("isActive"), isActive)
+                );
+            }
+
+            return predicates;
+        }, pageable).map(facultyMapper::toResponse);
     }
 }

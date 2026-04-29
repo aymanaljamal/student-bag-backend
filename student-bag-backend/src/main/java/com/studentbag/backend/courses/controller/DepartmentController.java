@@ -19,12 +19,17 @@ public class DepartmentController {
     private final DepartmentService departmentService;
 
     @PostMapping
-    public DepartmentResponseDTO create(@Valid @RequestBody DepartmentRequestDTO request) {
+    public DepartmentResponseDTO create(
+            @Valid @RequestBody DepartmentRequestDTO request
+    ) {
         return departmentService.create(request);
     }
 
     @PutMapping("/{id}")
-    public DepartmentResponseDTO update(@PathVariable Long id, @Valid @RequestBody DepartmentRequestDTO request) {
+    public DepartmentResponseDTO update(
+            @PathVariable Long id,
+            @Valid @RequestBody DepartmentRequestDTO request
+    ) {
         return departmentService.update(id, request);
     }
 
@@ -34,7 +39,13 @@ public class DepartmentController {
     }
 
     @GetMapping("/all")
-    public List<DepartmentResponseDTO> getAll() {
+    public List<DepartmentResponseDTO> getAll(
+            @RequestParam(required = false) Long institutionId
+    ) {
+        if (institutionId != null) {
+            return departmentService.getAllByInstitution(institutionId);
+        }
+
         return departmentService.getAll();
     }
 
@@ -46,10 +57,17 @@ public class DepartmentController {
     @GetMapping("/search")
     public Page<DepartmentResponseDTO> search(
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long institutionId,
             @RequestParam(required = false) Long facultyId,
             @RequestParam(required = false) Boolean isActive,
             Pageable pageable
     ) {
-        return departmentService.search(keyword, facultyId, isActive, pageable);
+        return departmentService.search(
+                keyword,
+                institutionId,
+                facultyId,
+                isActive,
+                pageable
+        );
     }
 }
