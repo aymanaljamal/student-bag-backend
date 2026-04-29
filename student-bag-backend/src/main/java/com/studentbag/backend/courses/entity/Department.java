@@ -35,10 +35,6 @@ public class Department extends BaseEntity {
     @Column(name = "name_english")
     private String nameEnglish;
 
-    /**
-     * لو البرنامج عندك فقط نص وما بدك Entity مستقل
-     * ممكن نخزنه هون إذا كان القسم نفسه مرتبط ببرنامج ظاهر من ريتاج
-     */
     @Column(name = "program_name_arabic")
     private String programNameArabic;
 

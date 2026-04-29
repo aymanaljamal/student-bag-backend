@@ -17,7 +17,15 @@ public interface DepartmentService {
 
     List<DepartmentResponseDTO> getAll();
 
+    List<DepartmentResponseDTO> getAllByInstitution(Long institutionId);
+
     void delete(Long id);
 
-    Page<DepartmentResponseDTO> search(String keyword, Long facultyId, Boolean isActive, Pageable pageable);
+    Page<DepartmentResponseDTO> search(
+            String keyword,
+            Long institutionId,
+            Long facultyId,
+            Boolean isActive,
+            Pageable pageable
+    );
 }

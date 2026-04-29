@@ -23,6 +23,7 @@ public class FacultyMapper {
                 .nameArabic(faculty.getNameArabic())
                 .nameEnglish(faculty.getNameEnglish())
                 .institutionId(faculty.getInstitution().getId())
+                .institutionName(faculty.getInstitution().getName())
                 .isActive(faculty.getIsActive())
                 .build();
     }

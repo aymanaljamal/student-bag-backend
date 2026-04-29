@@ -73,9 +73,59 @@ public class DepartmentServiceImpl implements DepartmentService {
     }
 
     @Override
-    public Page<DepartmentResponseDTO> search(String keyword, Long facultyId, Boolean isActive, Pageable pageable) {
-        // لاحقًا ممكن تضيف Specification للبحث
-        return departmentRepository.findAll(pageable)
-                .map(departmentMapper::toResponse);
+    public List<DepartmentResponseDTO> getAllByInstitution(Long institutionId) {
+        return departmentRepository.findByFacultyInstitutionId(institutionId)
+                .stream()
+                .map(departmentMapper::toResponse)
+                .toList();
+    }
+
+    @Override
+    public Page<DepartmentResponseDTO> search(
+            String keyword,
+            Long institutionId,
+            Long facultyId,
+            Boolean isActive,
+            Pageable pageable
+    ) {
+        return departmentRepository.findAll((root, query, cb) -> {
+            var predicates = cb.conjunction();
+
+            if (keyword != null && !keyword.trim().isEmpty()) {
+                String like = "%" + keyword.trim().toLowerCase() + "%";
+                predicates = cb.and(
+                        predicates,
+                        cb.or(
+                                cb.like(cb.lower(root.get("nameArabic")), like),
+                                cb.like(cb.lower(root.get("nameEnglish")), like),
+                                cb.like(cb.lower(root.get("programNameArabic")), like),
+                                cb.like(cb.lower(root.get("programNameEnglish")), like)
+                        )
+                );
+            }
+
+            if (facultyId != null) {
+                predicates = cb.and(
+                        predicates,
+                        cb.equal(root.get("faculty").get("id"), facultyId)
+                );
+            }
+
+            if (institutionId != null) {
+                predicates = cb.and(
+                        predicates,
+                        cb.equal(root.get("faculty").get("institution").get("id"), institutionId)
+                );
+            }
+
+            if (isActive != null) {
+                predicates = cb.and(
+                        predicates,
+                        cb.equal(root.get("isActive"), isActive)
+                );
+            }
+
+            return predicates;
+        }, pageable).map(departmentMapper::toResponse);
     }
 }
