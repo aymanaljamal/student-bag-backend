@@ -9,11 +9,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
+@Transactional
 public class AdminDashboardAnalyticsServiceImpl implements AdminDashboardAnalyticsService {
 
     private final AnalyticsQueryRepository queryRepository;
@@ -32,6 +31,7 @@ public class AdminDashboardAnalyticsServiceImpl implements AdminDashboardAnalyti
                 .charts(buildCharts())
                 .build();
     }
+
     private AdminDashboardAnalyticsResponse.UserAnalytics buildUserAnalytics() {
         return mapper.toAdminUserAnalytics(
                 queryRepository.countUsers(),
@@ -56,7 +56,7 @@ public class AdminDashboardAnalyticsServiceImpl implements AdminDashboardAnalyti
         return mapper.toAdminEventAnalytics(
                 queryRepository.countEvents(),
                 queryRepository.countActiveEvents(),
-                queryRepository.countEndedEvents(),
+                queryRepository.countFinishedEvents(),
                 queryRepository.countUpcomingEvents(),
                 queryRepository.countEventsRequiresRegistration(),
                 queryRepository.countAllEventRegistrations()
@@ -96,7 +96,7 @@ public class AdminDashboardAnalyticsServiceImpl implements AdminDashboardAnalyti
                 ),
                 List.of(
                         mapper.chartPoint("Active", queryRepository.countActiveEvents()),
-                        mapper.chartPoint("Ended", queryRepository.countEndedEvents()),
+                        mapper.chartPoint("Ended", queryRepository.countFinishedEvents()),
                         mapper.chartPoint("Upcoming", queryRepository.countUpcomingEvents())
                 ),
                 List.of(),
