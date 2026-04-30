@@ -53,22 +53,20 @@ public class AdminResource extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "course_id", nullable = false)
     private Course course;
-
-    @Column(name = "file_url")
+    @Column(columnDefinition = "TEXT")
     private String fileUrl;
 
-    @Column(name = "external_link")
+    @Column(columnDefinition = "TEXT")
     private String externalLink;
 
-    @Column(name = "thumbnail_url")
+    @Column(columnDefinition = "TEXT")
     private String thumbnailUrl;
 
-    @Column(name = "mime_type")
-    private String mimeType;
-
-    @Column(name = "file_name")
+    @Column(length = 512)
     private String fileName;
 
+    @Column(length = 100)
+    private String mimeType;
     @Column(name = "file_size_bytes")
     private Long fileSizeBytes;
 

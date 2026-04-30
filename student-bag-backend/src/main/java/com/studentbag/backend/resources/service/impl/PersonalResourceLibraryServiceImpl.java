@@ -58,9 +58,9 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
     private final CourseRepository courseRepository;
     private final ScheduleManagementService scheduleManagementService;
     private final ResourceIntegrationService resourceIntegrationService;
-
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
+
     public PersonalLibraryOverviewResponse getLibraryOverview(UUID currentUserId) {
         Student student = getStudentByUserId(currentUserId);
         PersonalResourceFolder root = getOrCreateRootFolderEntity(student);
@@ -139,14 +139,14 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public PersonalResourceFolderResponse getFolderById(Long folderId, UUID currentUserId) {
         Student student = getStudentByUserId(currentUserId);
         return PersonalResourceFolderMapper.toResponse(getFolderForStudent(folderId, student.getId()));
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public List<PersonalResourceFolderResponse> getTopFolders(UUID currentUserId) {
         Student student = getStudentByUserId(currentUserId);
         PersonalResourceFolder root = getOrCreateRootFolderEntity(student);
