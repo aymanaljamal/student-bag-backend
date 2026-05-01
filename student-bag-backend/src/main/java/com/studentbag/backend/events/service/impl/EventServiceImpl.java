@@ -51,6 +51,14 @@ public class EventServiceImpl implements EventService {
     ) {
         validateEventDates(request);
 
+        log.warn(
+                "CREATE EVENT REQUEST => title={}, isOpportunity={}, hasOpportunityDetails={}, eventType={}",
+                request.getTitle(),
+                request.getIsOpportunity(),
+                request.getOpportunityDetails() != null,
+                request.getEventType()
+        );
+
         Institution institution = getInstitutionById(institutionId);
         User creator = getUserByEmail(currentUserEmail);
 
@@ -67,10 +75,12 @@ public class EventServiceImpl implements EventService {
         Event savedEvent = eventRepository.save(event);
 
         log.info(
-                "Created event id={} institutionId={} createdByUser={}",
+                "Created event id={} institutionId={} createdByUser={} isOpportunity={} hasOpportunity={}",
                 savedEvent.getId(),
                 institutionId,
-                creator.getId()
+                creator.getId(),
+                savedEvent.getIsOpportunity(),
+                savedEvent.getOpportunity() != null
         );
 
         return buildEventResponse(savedEvent, null);
@@ -84,6 +94,15 @@ public class EventServiceImpl implements EventService {
             String currentUserEmail
     ) {
         validateEventDates(request);
+
+        log.warn(
+                "UPDATE EVENT REQUEST => eventId={}, title={}, isOpportunity={}, hasOpportunityDetails={}, eventType={}",
+                eventId,
+                request.getTitle(),
+                request.getIsOpportunity(),
+                request.getOpportunityDetails() != null,
+                request.getEventType()
+        );
 
         User currentUser = getUserByEmail(currentUserEmail);
         Event existingEvent = getEventByIdOrThrow(eventId);
@@ -109,9 +128,11 @@ public class EventServiceImpl implements EventService {
         Event savedEvent = eventRepository.save(existingEvent);
 
         log.info(
-                "Updated event id={} updatedByUser={}",
+                "Updated event id={} updatedByUser={} isOpportunity={} hasOpportunity={}",
                 savedEvent.getId(),
-                currentUser.getId()
+                currentUser.getId(),
+                savedEvent.getIsOpportunity(),
+                savedEvent.getOpportunity() != null
         );
 
         return buildEventResponse(savedEvent, null);
@@ -172,10 +193,13 @@ public class EventServiceImpl implements EventService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<OpportunityResponseDTO> searchOpportunities(Long studentId, EventSearchRequestDTO request) {
+    public List<OpportunityResponseDTO> searchOpportunities(
+            Long studentId,
+            EventSearchRequestDTO request
+    ) {
         return eventRepository.findAll()
                 .stream()
-                .filter(event -> Boolean.TRUE.equals(event.getIsOpportunity()))
+                .filter(this::isOpportunityEvent)
                 .filter(event -> matchesSearch(event, request))
                 .sorted(buildComparator(request))
                 .map(Event::getOpportunity)
@@ -216,7 +240,8 @@ public class EventServiceImpl implements EventService {
         EventRegistration registration = registrationRepository
                 .findByEventIdAndStudentId(eventId, studentId)
                 .orElseThrow(() -> new ResourceNotFoundException(
-                        "Registration not found for event id: " + eventId + " and student id: " + studentId
+                        "Registration not found for event id: " + eventId
+                                + " and student id: " + studentId
                 ));
 
         registrationRepository.delete(registration);
@@ -266,15 +291,25 @@ public class EventServiceImpl implements EventService {
     }
 
     private void applyOpportunityDetails(Event event, EventRequestDTO request) {
-        if (Boolean.TRUE.equals(request.getIsOpportunity())
-                && request.getOpportunityDetails() != null) {
-            event.setOpportunity(eventMapper.toOpportunityEntity(
-                    request.getOpportunityDetails(),
-                    event
-            ));
+        boolean markedAsOpportunity = Boolean.TRUE.equals(request.getIsOpportunity());
+        boolean hasOpportunityDetails = request.getOpportunityDetails() != null;
+
+        if (markedAsOpportunity || hasOpportunityDetails) {
+            event.setIsOpportunity(true);
+
+            if (hasOpportunityDetails) {
+                Opportunity opportunity = eventMapper.toOpportunityEntity(
+                        request.getOpportunityDetails(),
+                        event
+                );
+
+                event.setOpportunity(opportunity);
+            }
+
             return;
         }
 
+        event.setIsOpportunity(false);
         event.setOpportunity(null);
     }
 
@@ -315,6 +350,11 @@ public class EventServiceImpl implements EventService {
                 && !event.getEndDateTime().isAfter(LocalDateTime.now());
     }
 
+    private boolean isOpportunityEvent(Event event) {
+        return Boolean.TRUE.equals(event.getIsOpportunity())
+                || event.getOpportunity() != null;
+    }
+
     private boolean matchesSearch(Event event, EventSearchRequestDTO request) {
         if (request == null) {
             return true;
@@ -352,7 +392,7 @@ public class EventServiceImpl implements EventService {
 
         boolean opportunityMatches =
                 request.getIsOpportunity() == null
-                        || Objects.equals(event.getIsOpportunity(), request.getIsOpportunity());
+                        || Objects.equals(isOpportunityEvent(event), request.getIsOpportunity());
 
         boolean departmentMatches =
                 isBlank(request.getDepartment())
