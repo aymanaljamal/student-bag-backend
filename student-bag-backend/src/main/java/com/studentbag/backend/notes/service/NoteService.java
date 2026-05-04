@@ -53,32 +53,45 @@ public class NoteService {
 
     @Transactional(readOnly = true)
     public List<Note> getStudentNotes(Long studentId) {
-        return noteRepository.findByStudentIdAndIsDeletedFalseAndIsArchivedFalseOrderByIsPinnedDescCreatedAtDesc(studentId);
+        return noteRepository
+                .findByStudent_IdAndIsDeletedFalseAndIsArchivedFalseOrderByIsPinnedDescCreatedAtDesc(
+                        studentId
+                );
     }
 
     @Transactional(readOnly = true)
     public List<Note> getArchivedNotes(Long studentId) {
-        return noteRepository.findByStudentIdAndIsArchivedTrueAndIsDeletedFalse(studentId);
+        return noteRepository.findByStudent_IdAndIsArchivedTrueAndIsDeletedFalse(
+                studentId
+        );
     }
 
     @Transactional(readOnly = true)
     public List<Note> getDeletedNotes(Long studentId) {
-        return noteRepository.findByStudentIdAndIsDeletedTrue(studentId);
+        return noteRepository.findByStudent_IdAndIsDeletedTrue(studentId);
     }
 
     @Transactional(readOnly = true)
     public List<Note> getStudentNotesByCourse(Long studentId, Long courseId) {
-        return noteRepository.findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalse(studentId, courseId);
+        return noteRepository
+                .findByStudent_IdAndCourse_IdAndIsDeletedFalseAndIsArchivedFalse(
+                        studentId,
+                        courseId
+                );
     }
 
     @Transactional(readOnly = true)
     public List<Note> getImportantNotes(Long studentId) {
-        return noteRepository.findByStudentIdAndIsImportantTrueAndIsDeletedFalse(studentId);
+        return noteRepository.findByStudent_IdAndIsImportantTrueAndIsDeletedFalse(
+                studentId
+        );
     }
 
     @Transactional(readOnly = true)
     public List<Note> getPinnedNotes(Long studentId) {
-        return noteRepository.findByStudentIdAndIsPinnedTrueAndIsDeletedFalse(studentId);
+        return noteRepository.findByStudent_IdAndIsPinnedTrueAndIsDeletedFalse(
+                studentId
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -87,22 +100,35 @@ public class NoteService {
 
     @Transactional(readOnly = true)
     public List<Note> getNotesByType(Long studentId, NoteType noteType) {
-        return noteRepository.findByStudentIdAndNoteTypeAndIsDeletedFalse(studentId, noteType);
+        return noteRepository.findByStudent_IdAndNoteTypeAndIsDeletedFalse(
+                studentId,
+                noteType
+        );
     }
 
     @Transactional(readOnly = true)
     public List<Note> getNotesByPriority(Long studentId, NotePriority priority) {
-        return noteRepository.findByStudentIdAndPriorityAndIsDeletedFalse(studentId, priority);
+        return noteRepository.findByStudent_IdAndPriorityAndIsDeletedFalse(
+                studentId,
+                priority
+        );
     }
 
     @Transactional(readOnly = true)
     public List<Note> getNotesByColor(Long studentId, String color) {
-        return noteRepository.findByStudentIdAndColorIgnoreCaseAndIsDeletedFalse(studentId, color);
+        return noteRepository.findByStudent_IdAndColorIgnoreCaseAndIsDeletedFalse(
+                studentId,
+                color
+        );
     }
 
     @Transactional(readOnly = true)
     public List<Note> searchByTitle(Long studentId, String title) {
-        return noteRepository.findByStudentIdAndTitleContainingIgnoreCaseAndIsDeletedFalse(studentId, title);
+        return noteRepository
+                .findByStudent_IdAndTitleContainingIgnoreCaseAndIsDeletedFalse(
+                        studentId,
+                        title
+                );
     }
 
     // -------------------------------------------------------------------------

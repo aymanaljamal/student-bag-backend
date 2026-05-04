@@ -81,7 +81,6 @@ public class ResourceIntegrationServiceImpl implements ResourceIntegrationServic
                         .build())
                 .toList();
     }
-
     @Override
     public List<LinkedNoteSummaryResponse> getLinkedNotesByCourse(
             UUID currentUserId,
@@ -89,17 +88,52 @@ public class ResourceIntegrationServiceImpl implements ResourceIntegrationServic
     ) {
         Student student = getStudentByUserId(currentUserId);
 
-        List<Note> notes = noteRepository
-                .findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalse(student.getId(), courseId);
+        System.out.println("LINKED NOTES CHECK studentId=" + student.getId());
+        System.out.println("LINKED NOTES CHECK courseId=" + courseId);
 
-        return notes.stream()
+        List<Note> notes = noteRepository
+                .findByStudent_IdAndCourse_IdAndIsDeletedFalse(
+                        student.getId(),
+                        courseId
+                );
+
+        System.out.println("LINKED NOTES FOUND BEFORE FILTER=" + notes.size());
+
+        notes.forEach(note -> System.out.println(
+                "NOTE id=" + note.getId()
+                        + ", title=" + note.getTitle()
+                        + ", studentId=" + (
+                        note.getStudent() != null
+                                ? note.getStudent().getId()
+                                : null
+                )
+                        + ", courseId=" + (
+                        note.getCourse() != null
+                                ? note.getCourse().getId()
+                                : null
+                )
+                        + ", isDeleted=" + note.getIsDeleted()
+                        + ", isArchived=" + note.getIsArchived()
+        ));
+
+        List<Note> activeNotes = notes.stream()
+                .filter(note -> !Boolean.TRUE.equals(note.getIsArchived()))
+                .toList();
+
+        System.out.println("LINKED NOTES FOUND AFTER FILTER=" + activeNotes.size());
+
+        return activeNotes.stream()
                 .map(note -> {
-                    List<NoteAttachment> attachments = noteAttachmentRepository.findByNoteId(note.getId());
-                    return ResourceIntegrationMapper.toLinkedNoteResponse(note, attachments);
+                    List<NoteAttachment> attachments =
+                            noteAttachmentRepository.findByNoteId(note.getId());
+
+                    return ResourceIntegrationMapper.toLinkedNoteResponse(
+                            note,
+                            attachments
+                    );
                 })
                 .toList();
     }
-
     @Override
     public List<LinkedTaskSummaryResponse> getLinkedTasksByCourse(
             UUID currentUserId,

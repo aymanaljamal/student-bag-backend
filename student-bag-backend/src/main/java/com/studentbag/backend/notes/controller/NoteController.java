@@ -2,6 +2,7 @@ package com.studentbag.backend.notes.controller;
 
 import com.studentbag.backend.common.exception.ResourceNotFoundException;
 import com.studentbag.backend.courses.entity.Course;
+import com.studentbag.backend.courses.repository.CourseRepository;
 import com.studentbag.backend.courses.service.CourseService;
 import com.studentbag.backend.domain.enums.notes.NotePriority;
 import com.studentbag.backend.domain.enums.notes.NoteType;
@@ -62,8 +63,8 @@ public class NoteController {
     private final NoteService noteService;
     private final NoteMapper noteMapper;
     private final StudentRepository studentRepository;
-    private final CourseService courseService;
 
+    private final CourseRepository courseRepository;
     /**
      * Creates a new note.
      *
@@ -108,7 +109,10 @@ public class NoteController {
 
         Course course = null;
         if (request.getCourseId() != null) {
-        //    course = courseService.getById(request.getCourseId());
+            course = courseRepository.findById(request.getCourseId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Course not found with id: " + request.getCourseId()
+                    ));
         }
 
         Note note = noteMapper.toEntity(request, student, course);
@@ -116,7 +120,6 @@ public class NoteController {
 
         return noteMapper.toResponse(saved, noteService.getAttachments(saved.getId()));
     }
-
     /**
      * Updates an existing note.
      *
@@ -152,14 +155,15 @@ public class NoteController {
 
         Course course = null;
         if (request.getCourseId() != null) {
-        //    course = courseService.getById(request.getCourseId());
+            course = courseRepository.findById(request.getCourseId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Course not found with id: " + request.getCourseId()
+                    ));
         }
 
         Note existing = noteService.getById(id);
         noteMapper.updateEntity(existing, request, student, course);
 
-        // We save the already-updated entity directly.
-        // This works because create(note) internally delegates to repository.save(note).
         Note updated = noteService.create(existing);
 
         return noteMapper.toResponse(updated, noteService.getAttachments(updated.getId()));

@@ -57,16 +57,16 @@ public class NotificationController {
                 notificationService.deleteAllMyNotifications(userId)
         );
     }
-    @PreAuthorize("hasRole('ADMINISTRATOR')")
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR', 'INSTRUCTOR')")
     @PostMapping("/admin/send")
     public ResponseEntity<NotificationResponse> sendAdminNotification(
             @AuthenticationPrincipal UserDetails userDetails,
             @Valid @RequestBody CreateAdminNotificationRequest request
     ) {
-        UUID adminUserId = getCurrentUserId(userDetails);
+        UUID senderUserId = getCurrentUserId(userDetails);
 
         return ResponseEntity.ok(
-                notificationService.createAndSendAdminNotification(adminUserId, request)
+                notificationService.createAndSendAdminNotification(senderUserId, request)
         );
     }
 

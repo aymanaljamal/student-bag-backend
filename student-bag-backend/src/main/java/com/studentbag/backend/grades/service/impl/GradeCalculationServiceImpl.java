@@ -428,19 +428,34 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
         if (percentage.compareTo(new BigDecimal("90")) >= 0) {
             overallLevel = "EXCELLENT";
-            summary = "أداءك ممتاز جدًا، استمر بنفس المستوى.";
+            summary = bi(
+                    "أداءك ممتاز جدًا. الهدف الآن هو المحافظة على الاستقرار، خصوصًا في المواد ذات الساعات العالية لأنها يمكن أن تؤثر على المعدل بسرعة إذا انخفضت علامتها.",
+                    "Your performance is excellent. The main goal now is to stay consistent, especially in high-credit courses because they can quickly affect your GPA if their marks drop."
+            );
         } else if (percentage.compareTo(new BigDecimal("80")) >= 0) {
             overallLevel = "VERY_GOOD";
-            summary = "أداءك جيد جدًا، وعندك فرصة واضحة ترفعه أكثر.";
+            summary = bi(
+                    "أداءك جيد جدًا، وعندك فرصة واضحة لرفع المعدل أكثر إذا ركزت على المواد ذات التأثير الأعلى: الساعات الأعلى أو العلامات الأقل.",
+                    "Your performance is very good, and you have a clear chance to improve more by focusing on the highest-impact courses: higher credits or lower marks."
+            );
         } else if (percentage.compareTo(new BigDecimal("70")) >= 0) {
             overallLevel = "GOOD";
-            summary = "أداءك جيد، لكن يوجد مواد يمكن تحسينها بشكل مؤثر.";
+            summary = bi(
+                    "أداءك جيد، لكن يوجد مواد يمكن أن ترفع المعدل بشكل ملحوظ إذا تحسنت، خصوصًا المواد الثقيلة بالساعات أو التي علامتها الحالية منخفضة.",
+                    "Your performance is good, but some courses can noticeably improve your GPA if you improve them, especially high-credit courses or courses with lower current marks."
+            );
         } else if (percentage.compareTo(new BigDecimal("60")) >= 0) {
             overallLevel = "NEEDS_IMPROVEMENT";
-            summary = "معدلك مقبول، لكن يحتاج تركيز أكبر في المواد الأضعف.";
+            summary = bi(
+                    "معدلك مقبول لكنه يحتاج خطة واضحة. ابدأ بالمواد ذات الساعات الأعلى والعلامات الأقل لأنها تعطي أكبر فرق عند التحسين.",
+                    "Your average is acceptable, but it needs a clear plan. Start with high-credit and low-mark courses because improving them creates the biggest difference."
+            );
         } else {
             overallLevel = "AT_RISK";
-            summary = "معدلك منخفض حاليًا، والأولوية الآن لرفع المواد الأساسية والثقيلة.";
+            summary = bi(
+                    "معدلك منخفض حاليًا. الأولوية الآن ليست تحسين كل شيء بنفس الوقت، بل التركيز على المواد الأساسية والثقيلة بالساعات لتقليل الخسارة ورفع المعدل تدريجيًا.",
+                    "Your average is currently low. The priority is not to improve everything at once, but to focus on core and high-credit courses to reduce GPA loss and improve gradually."
+            );
         }
 
         List<CourseImpactDTO> weakestCourses = consideredItems.stream()
@@ -460,8 +475,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
             CourseImpactDTO weakest = weakestCourses.get(0);
             advice.add(GradeAdviceDTO.builder()
                     .level(GradeAdviceLevel.WARNING)
-                    .title("أولوية التحسين")
-                    .message("ركز أولًا على " + weakest.getCourseName() + " لأنها من أضعف المواد عندك حاليًا.")
+                    .title(bi("أولوية التحسين", "Improvement Priority"))
+                    .message(explainWeakness(weakest))
                     .build());
         }
 
@@ -469,9 +484,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
             CourseImpactDTO highestImpact = highestImpactCourses.get(0);
             advice.add(GradeAdviceDTO.builder()
                     .level(GradeAdviceLevel.INFO)
-                    .title("أعلى تأثير على المعدل")
-                    .message("رفع مادة " + highestImpact.getCourseName()
-                            + " سيفرق أكثر، لأنها تحمل ساعات أعلى أو علامتها الحالية منخفضة.")
+                    .title(bi("أعلى تأثير على المعدل", "Highest GPA Impact"))
+                    .message(explainImpact(highestImpact))
                     .build());
         }
 
@@ -483,24 +497,42 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         if (missingGradesCount > 0) {
             advice.add(GradeAdviceDTO.builder()
                     .level(GradeAdviceLevel.INFO)
-                    .title("فرصة التحسين ما زالت موجودة")
-                    .message("عندك " + missingGradesCount + " مادة/مواد بدون علامة نهائية حتى الآن، وهذا ممتاز لتحليل ماذا لو.")
+                    .title(bi("فرصة التحسين ما زالت موجودة", "Improvement Chance Still Exists"))
+                    .message(bi(
+                            "عندك " + missingGradesCount + " مادة/مواد بدون علامة نهائية حتى الآن. هذا مهم لأن المواد المتبقية ما زالت قادرة على تغيير المعدل، ويمكن استخدام تحليل ماذا لو لمعرفة العلامة المطلوبة.",
+                            "You still have " + missingGradesCount + " course(s) without a final grade. This matters because remaining courses can still change your GPA, and you can use What-If analysis to know the required mark."
+                    ))
                     .build());
         }
 
+        advice.add(GradeAdviceDTO.builder()
+                .level(GradeAdviceLevel.INFO)
+                .title(bi("كيف يتم التعامل مع المواد المعادة؟", "How repeated courses are handled"))
+                .message(repeatPolicyExplanation(calculation))
+                .build());
+
         if (gpa.compareTo(gpaScale.multiply(new BigDecimal("0.50"))) < 0) {
-            warnings.add("معدلك على مقياس GPA ما زال منخفضًا نسبيًا مقارنة بالحد المتوسط.");
+            warnings.add(bi(
+                    "معدلك على مقياس GPA ما زال منخفضًا نسبيًا مقارنة بمنتصف المقياس، لذلك ركز على المواد التي تجمع بين ساعات عالية وعلامة منخفضة.",
+                    "Your GPA is still relatively low compared with the middle of the scale, so focus on courses that combine high credits with low marks."
+            ));
         }
 
         if (weakestCourses.size() >= 2) {
-            warnings.add("عندك أكثر من مادة منخفضة، فالأفضل تبدأ بالمواد ذات الساعات الأعلى أولًا.");
+            warnings.add(bi(
+                    "عندك أكثر من مادة منخفضة. لا تبدأ عشوائيًا؛ ابدأ بالمادة ذات الساعات الأعلى لأنها تؤثر أكثر على المعدل.",
+                    "You have more than one low course. Do not start randomly; begin with the higher-credit course because it affects the GPA more."
+            ));
         }
 
         if (percentage.compareTo(new BigDecimal("85")) >= 0) {
             advice.add(GradeAdviceDTO.builder()
                     .level(GradeAdviceLevel.SUCCESS)
-                    .title("استمر")
-                    .message("أداؤك قوي، والمحافظة على هذا المستوى أهم من التشتت بين المواد.")
+                    .title(bi("استمر", "Keep Going"))
+                    .message(bi(
+                            "أداؤك قوي. المحافظة على هذا المستوى في المواد ذات الساعات العالية أهم من محاولة رفع مادة صغيرة التأثير فقط.",
+                            "Your performance is strong. Maintaining this level in high-credit courses is more important than only improving a low-impact course."
+                    ))
                     .build());
         }
 
@@ -566,8 +598,14 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                     .totalCredits(totalCredits)
                     .maxPossibleValue(currentValue)
                     .message(possible
-                            ? "الهدف محقق أصلًا لأنه لا توجد مواد متبقية."
-                            : "لا توجد مواد متبقية، لذلك لا يمكن رفع النتيجة أكثر ضمن هذا الفصل.")
+                            ? bi(
+                            "الهدف محقق أصلًا لأنه لا توجد مواد متبقية لتغيير النتيجة.",
+                            "The target is already achieved because there are no remaining courses that can change the result."
+                    )
+                            : bi(
+                            "لا توجد مواد متبقية، لذلك لا يمكن رفع النتيجة أكثر ضمن هذا الفصل.",
+                            "There are no remaining courses, so the result cannot be improved further within this semester."
+                    ))
                     .build();
         }
 
@@ -601,10 +639,23 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
         List<String> notes = new ArrayList<>();
         if (possible) {
-            notes.add("الهدف ممكن إذا حافظت تقريبًا على هذا المتوسط في المواد المتبقية.");
+            notes.add(bi(
+                    "الهدف ممكن إذا حصلت تقريبًا على " + fmt(requiredAverageOnRemaining) + " في متوسط المواد المتبقية.",
+                    "The target is possible if you score about " + fmt(requiredAverageOnRemaining) + " on average in the remaining courses."
+            ));
+            notes.add(bi(
+                    "المواد ذات الساعات الأعلى تحتاج اهتمامًا أكبر، لأن نفس العلامة فيها تؤثر أكثر على النتيجة النهائية.",
+                    "Higher-credit courses need more attention because the same mark in them has a bigger effect on the final result."
+            ));
         } else {
-            notes.add("الهدف غير ممكن ضمن هذا الفصل فقط حسب المواد المتبقية.");
-            notes.add("أعلى نتيجة ممكنة تقريبًا هي " + maxPossible.setScale(2, RoundingMode.HALF_UP));
+            notes.add(bi(
+                    "الهدف غير ممكن ضمن هذا الفصل فقط حسب المواد المتبقية.",
+                    "The target is not possible within this semester only based on the remaining courses."
+            ));
+            notes.add(bi(
+                    "أعلى نتيجة ممكنة تقريبًا هي " + fmt(maxPossible) + ".",
+                    "The approximate maximum possible result is " + fmt(maxPossible) + "."
+            ));
         }
 
         return GradeWhatIfResponse.builder()
@@ -619,8 +670,14 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .remainingCredits(remainingCredits)
                 .totalCredits(totalCredits)
                 .message(possible
-                        ? "يمكنك الوصول إلى الهدف إذا حققت المتوسط المطلوب في المواد المتبقية."
-                        : "هذا الهدف غير ممكن في هذا الفصل فقط.")
+                        ? bi(
+                        "يمكنك الوصول إلى الهدف إذا حققت المتوسط المطلوب في المواد المتبقية.",
+                        "You can reach the target if you achieve the required average in the remaining courses."
+                )
+                        : bi(
+                        "هذا الهدف غير ممكن في هذا الفصل فقط.",
+                        "This target is not possible within this semester only."
+                ))
                 .requiredPerCourse(perCourse)
                 .notes(notes)
                 .build();
@@ -652,7 +709,10 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                     .gradedCredits(gradedCredits)
                     .remainingCredits(remainingCredits)
                     .totalCredits(semesterCredits)
-                    .message("لا توجد ساعات فصلية كافية لإجراء تحليل تراكمي.")
+                    .message(bi(
+                            "لا توجد ساعات فصلية كافية لإجراء تحليل تراكمي.",
+                            "There are not enough semester credits to run a cumulative analysis."
+                    ))
                     .build();
         }
 
@@ -700,11 +760,24 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .toList();
 
         List<String> notes = new ArrayList<>();
-        notes.add("هذا التحليل يفترض أن الساعات المكتملة السابقة ثابتة، والتحسين المطلوب كله من هذا الفصل.");
+        notes.add(bi(
+                "هذا التحليل يفترض أن الساعات المكتملة السابقة ثابتة، وأن التحسين المطلوب كله سيأتي من هذا الفصل.",
+                "This analysis assumes your previously completed credits are fixed, and the required improvement must come from this semester."
+        ));
 
-        if (!possible) {
-            notes.add("أعلى تراكمي ممكن تقريبًا بعد هذا الفصل هو "
-                    + maxPossibleCumulative.setScale(2, RoundingMode.HALF_UP));
+        if (possible) {
+            notes.add(bi(
+                    "للوصول إلى الهدف التراكمي، تحتاج نتيجة فصلية تقريبًا " + fmt(requiredSemesterValue)
+                            + " ومتوسطًا على المواد المتبقية تقريبًا " + fmt(requiredAverageOnRemaining) + ".",
+                    "To reach the cumulative target, you need an approximate semester result of "
+                            + fmt(requiredSemesterValue) + " and an average of about "
+                            + fmt(requiredAverageOnRemaining) + " in the remaining courses."
+            ));
+        } else {
+            notes.add(bi(
+                    "أعلى تراكمي ممكن تقريبًا بعد هذا الفصل هو " + fmt(maxPossibleCumulative) + ".",
+                    "The approximate maximum cumulative result after this semester is " + fmt(maxPossibleCumulative) + "."
+            ));
         }
 
         return GradeWhatIfResponse.builder()
@@ -721,8 +794,14 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .remainingCredits(remainingCredits)
                 .totalCredits(semesterCredits)
                 .message(possible
-                        ? "الوصول إلى الهدف التراكمي ممكن إذا حققت المعدل المطلوب هذا الفصل."
-                        : "الهدف التراكمي غير ممكن من خلال هذا الفصل فقط.")
+                        ? bi(
+                        "الوصول إلى الهدف التراكمي ممكن إذا حققت المعدل المطلوب هذا الفصل.",
+                        "Reaching the cumulative target is possible if you achieve the required semester result."
+                )
+                        : bi(
+                        "الهدف التراكمي غير ممكن من خلال هذا الفصل فقط.",
+                        "The cumulative target is not possible through this semester only."
+                ))
                 .requiredPerCourse(perCourse)
                 .notes(notes)
                 .build();
@@ -805,6 +884,86 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         }
 
         return "Unnamed Course";
+    }
+
+    private String bi(String ar, String en) {
+        return ar + "\n" + en;
+    }
+
+    private String fmt(BigDecimal value) {
+        return nz(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private String safeCourseName(CourseImpactDTO course) {
+        if (course.getCourseName() == null || course.getCourseName().isBlank()) {
+            return "Unnamed Course";
+        }
+        return course.getCourseName();
+    }
+
+    private String explainWeakness(CourseImpactDTO course) {
+        String name = safeCourseName(course);
+        String credits = fmt(course.getCreditHours());
+        String percentage = course.getCurrentPercentage() == null
+                ? "غير مدخلة / Not entered"
+                : fmt(course.getCurrentPercentage()) + "%";
+
+        return bi(
+                "ركز أولًا على " + name + " لأنها من أضعف المواد عندك حاليًا. علامتك فيها " + percentage
+                        + " وعدد ساعاتها " + credits
+                        + ". إذا كانت المادة منخفضة ومعها ساعات أكثر، فإن تحسينها يساعد المعدل أكثر من مادة منخفضة بساعات قليلة.",
+                "Focus first on " + name + " because it is one of your weakest courses right now. Your current mark is "
+                        + percentage + " and it has " + credits
+                        + " credit hours. When a low mark belongs to a higher-credit course, improving it helps the GPA more than improving a low-credit course."
+        );
+    }
+
+    private String explainImpact(CourseImpactDTO course) {
+        String name = safeCourseName(course);
+        String credits = fmt(course.getCreditHours());
+        String percentage = course.getCurrentPercentage() == null
+                ? "غير مدخلة / Not entered"
+                : fmt(course.getCurrentPercentage()) + "%";
+        String impact = fmt(course.getImpactScore());
+
+        return bi(
+                "مادة " + name + " لها أعلى تأثير حاليًا لأن عدد ساعاتها " + credits
+                        + " وعلامتك الحالية فيها " + percentage
+                        + ". درجة التأثير المحسوبة هي " + impact
+                        + ". هذا يعني أن رفعها سيعطي فرقًا أكبر من مواد تأثيرها أقل.",
+                name + " currently has the highest impact because it has " + credits
+                        + " credit hours and your current mark is " + percentage
+                        + ". The calculated impact score is " + impact
+                        + ". This means improving it will create a bigger difference than improving lower-impact courses."
+        );
+    }
+
+    private String repeatPolicyExplanation(GradeCalculation calculation) {
+        if (calculation.getRepeatPolicy() == null) {
+            return bi(
+                    "سياسة المواد المعادة غير محددة، لذلك سيتم التعامل مع المحاولات حسب الإعداد الافتراضي للنظام.",
+                    "The repeated-course policy is not specified, so attempts will be handled using the system default."
+            );
+        }
+
+        return switch (calculation.getRepeatPolicy()) {
+            case ALL_ATTEMPTS -> bi(
+                    "إذا أعدت مادة، فكل المحاولات تدخل في حساب المعدل. مثال: لو أخذت مادة 4 ساعات مرتين، المحاولتان تدخلان في مجموع الساعات والنقاط.",
+                    "If you repeat a course, all attempts are included in the GPA. Example: if you take a 4-credit course twice, both attempts are included in total credits and points."
+            );
+            case HIGHEST_ATTEMPT -> bi(
+                    "إذا أعدت مادة، يتم احتساب أعلى محاولة فقط. مثال: إذا حصلت أول مرة على 55 ثم أعدتها وحصلت على 80، سيتم اعتماد 80 فقط.",
+                    "If you repeat a course, only the highest attempt is counted. Example: if you got 55 first and then 80 after repeating it, only 80 will be used."
+            );
+            case LAST_ATTEMPT -> bi(
+                    "إذا أعدت مادة، يتم احتساب آخر محاولة فقط حتى لو كانت أقل من المحاولة السابقة.",
+                    "If you repeat a course, only the latest attempt is counted, even if it is lower than the previous attempt."
+            );
+            case EXCLUDE_REPEATED -> bi(
+                    "المواد المعادة يتم استبعادها من الحساب حسب السياسة الحالية، لذلك لن تؤثر على المعدل.",
+                    "Repeated courses are excluded from the GPA based on the current policy, so they will not affect the result."
+            );
+        };
     }
 
     private BigDecimal toBigDecimal(Integer value) {
