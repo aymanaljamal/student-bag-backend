@@ -116,7 +116,6 @@ public class StudentDashboardAnalyticsServiceImpl implements StudentDashboardAna
                 )
         );
     }
-
     private StudentDashboardAnalyticsResponse.StudentCharts buildCharts(Long studentId) {
         List<ChartDataPointDto> tasksByStatus = queryRepository.studentTasksByStatus(studentId)
                 .stream()
@@ -138,13 +137,23 @@ public class StudentDashboardAnalyticsServiceImpl implements StudentDashboardAna
                 .map(row -> mapper.timePoint(row.date(), row.value()))
                 .toList();
 
+        List<TimeSeriesPointDto> gradeTrend = queryRepository.studentGradeTrend(studentId)
+                .stream()
+                .map(row -> mapper.timePoint(row.date(), row.value()))
+                .toList();
+
+        List<TimeSeriesPointDto> upcomingEventsTimeline = queryRepository.studentUpcomingEventsTimeline(studentId)
+                .stream()
+                .map(row -> mapper.timePoint(row.date(), row.value()))
+                .toList();
+
         return mapper.toStudentCharts(
                 tasksByStatus,
                 notesByStatus,
                 weeklyTasksCreated,
                 weeklyNotesCreated,
-                List.of(),
-                List.of()
+                gradeTrend,
+                upcomingEventsTimeline
         );
     }
 }

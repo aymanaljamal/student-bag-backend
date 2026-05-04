@@ -2,7 +2,6 @@ package com.studentbag.backend.resources.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
 import com.studentbag.backend.courses.entity.Course;
-
 import com.studentbag.backend.domain.enums.resources.ResourceCategory;
 import com.studentbag.backend.domain.enums.resources.ResourceType;
 import com.studentbag.backend.student.entity.Student;
@@ -18,7 +17,7 @@ import lombok.*;
 @Builder
 public class PersonalResourceItem extends BaseEntity {
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 255)
     private String title;
 
     @Column(columnDefinition = "TEXT")
@@ -44,19 +43,19 @@ public class PersonalResourceItem extends BaseEntity {
     @JoinColumn(name = "course_id")
     private Course course;
 
-    @Column(name = "file_url")
+    @Column(name = "file_url", columnDefinition = "TEXT")
     private String fileUrl;
 
-    @Column(name = "external_link")
+    @Column(name = "external_link", columnDefinition = "TEXT")
     private String externalLink;
 
-    @Column(name = "thumbnail_url")
+    @Column(name = "thumbnail_url", columnDefinition = "TEXT")
     private String thumbnailUrl;
 
-    @Column(name = "mime_type")
+    @Column(name = "mime_type", columnDefinition = "TEXT")
     private String mimeType;
 
-    @Column(name = "file_name")
+    @Column(name = "file_name", columnDefinition = "TEXT")
     private String fileName;
 
     @Column(name = "file_size_bytes")

@@ -404,7 +404,33 @@ public class AnalyticsQueryRepository {
     // -------------------------------------------------------------------------
     // Student Grades + Library + Events
     // -------------------------------------------------------------------------
+    public List<TimeSeriesRow> studentGradeTrend(Long studentId) {
+        return timeSeriesSafe("""
+        SELECT 
+            DATE(COALESCE(updated_at, created_at)) AS date,
+            ROUND(COALESCE(calculated_percentage, 0)) AS value
+        FROM grade_calculations
+        WHERE student_id = ?
+        ORDER BY COALESCE(updated_at, created_at) DESC
+        LIMIT 5
+    """, studentId);
+    }
 
+    public List<TimeSeriesRow> studentUpcomingEventsTimeline(Long studentId) {
+        return timeSeriesSafe("""
+        SELECT 
+            DATE(e.start_date_time) AS date,
+            COUNT(*) AS value
+        FROM event_registrations r
+        JOIN events e ON e.id = r.event_id
+        WHERE r.student_id = ?
+          AND COALESCE(r.status, 'REGISTERED') <> 'CANCELLED'
+          AND e.start_date_time >= CURRENT_TIMESTAMP
+        GROUP BY DATE(e.start_date_time)
+        ORDER BY DATE(e.start_date_time) ASC
+        LIMIT 5
+    """, studentId);
+    }
     public Long countStudentGradeCalculations(Long studentId) {
         return countSafe("""
             SELECT COUNT(*)
