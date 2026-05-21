@@ -4,6 +4,7 @@ import com.studentbag.backend.schedule.dto.request.SaveScheduleRequestDTO;
 import com.studentbag.backend.schedule.dto.response.StudentScheduleResponseDTO;
 import com.studentbag.backend.schedule.dto.response.StudentScheduleViewerResponseDTO;
 import com.studentbag.backend.schedule.service.StudentScheduleSaveService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +20,7 @@ public class StudentScheduleSaveController {
 
     @PostMapping
     public ResponseEntity<StudentScheduleResponseDTO> save(
-            @RequestBody SaveScheduleRequestDTO request
+            @Valid @RequestBody SaveScheduleRequestDTO request
     ) {
         return ResponseEntity.ok(saveService.saveSelectedSchedule(request));
     }

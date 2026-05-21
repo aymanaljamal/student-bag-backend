@@ -11,6 +11,7 @@ public class RitajSectionDto {
     private String sectionNumber;
     private String sectionType;
 
+
     private String instructorNameArabic;
     private String instructorNameEnglish;
 
@@ -18,6 +19,7 @@ public class RitajSectionDto {
 
     private Integer capacity;
     private Integer enrolled;
+
 
     private String parentLectureSectionNumber;
 

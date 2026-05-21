@@ -47,12 +47,16 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/courses/all").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/departments/all").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/courses/search").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/ritaj-sync/**").permitAll()
 
                         .requestMatchers(
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html"
                         ).permitAll()
+
+                        .requestMatchers("/api/chatbot/**").authenticated()
+
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

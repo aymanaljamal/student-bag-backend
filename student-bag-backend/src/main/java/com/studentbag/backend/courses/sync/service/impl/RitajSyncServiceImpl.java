@@ -1,15 +1,33 @@
 package com.studentbag.backend.courses.sync.service.impl;
 
-import com.studentbag.backend.courses.entity.*;
-import com.studentbag.backend.courses.repository.*;
-import com.studentbag.backend.courses.sync.dto.*;
-import com.studentbag.backend.courses.sync.helper.RitajTermParserHelper;
-import com.studentbag.backend.courses.sync.mapper.*;
+import com.studentbag.backend.courses.entity.ClassSession;
+import com.studentbag.backend.courses.entity.Course;
+import com.studentbag.backend.courses.entity.CourseSection;
+import com.studentbag.backend.courses.entity.Department;
+import com.studentbag.backend.courses.entity.Faculty;
+import com.studentbag.backend.courses.entity.Term;
+import com.studentbag.backend.courses.repository.ClassSessionRepository;
+import com.studentbag.backend.courses.repository.CourseRepository;
+import com.studentbag.backend.courses.repository.CourseSectionRepository;
+import com.studentbag.backend.courses.repository.DepartmentRepository;
+import com.studentbag.backend.courses.repository.FacultyRepository;
+import com.studentbag.backend.courses.repository.TermRepository;
+import com.studentbag.backend.courses.sync.dto.RitajClassSessionDto;
+import com.studentbag.backend.courses.sync.dto.RitajCourseDto;
+import com.studentbag.backend.courses.sync.dto.RitajFetchedPagesDto;
+import com.studentbag.backend.courses.sync.dto.RitajSectionDto;
+import com.studentbag.backend.courses.sync.dto.RitajSyncResult;
+import com.studentbag.backend.courses.sync.mapper.ClassSessionSyncMapper;
+import com.studentbag.backend.courses.sync.mapper.CourseSectionSyncMapper;
+import com.studentbag.backend.courses.sync.mapper.CourseSyncMapper;
+import com.studentbag.backend.courses.sync.mapper.DepartmentSyncMapper;
+import com.studentbag.backend.courses.sync.mapper.FacultySyncMapper;
 import com.studentbag.backend.courses.sync.service.RitajFetchService;
 import com.studentbag.backend.courses.sync.service.RitajParserService;
 import com.studentbag.backend.courses.sync.service.RitajSyncService;
-import com.studentbag.backend.domain.enums.courses.SectionType;
 import com.studentbag.backend.domain.enums.UserRole;
+import com.studentbag.backend.domain.enums.courses.Season;
+import com.studentbag.backend.domain.enums.courses.SectionType;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.institution.repository.InstitutionRepository;
 import com.studentbag.backend.instructor.entity.Instructor;
@@ -18,18 +36,26 @@ import com.studentbag.backend.instructor.service.InstructorAccountIdentityServic
 import com.studentbag.backend.instructor.service.InstructorAccountPasswordService;
 import com.studentbag.backend.users.entity.User;
 import com.studentbag.backend.users.repository.UserRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.*;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class RitajSyncServiceImpl implements RitajSyncService {
+
+    private static final String DEFAULT_TERM_CODE = "2025-2026-SECOND";
+    private static final String DEFAULT_TERM_NAME = "Second Semester 2025/2026";
+    private static final String DEFAULT_ACADEMIC_YEAR = "2025/2026";
 
     private final InstitutionRepository institutionRepository;
     private final TermRepository termRepository;
@@ -43,9 +69,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
 
     private final RitajFetchService ritajFetchService;
     private final RitajParserService ritajParserService;
-    private final RitajTermParserHelper ritajTermParserHelper;
 
-    private final TermSyncMapper termSyncMapper;
     private final FacultySyncMapper facultySyncMapper;
     private final DepartmentSyncMapper departmentSyncMapper;
     private final CourseSyncMapper courseSyncMapper;
@@ -56,254 +80,446 @@ public class RitajSyncServiceImpl implements RitajSyncService {
     private final InstructorAccountPasswordService passwordService;
     private final PasswordEncoder passwordEncoder;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     @Override
     @Transactional
     public RitajSyncResult syncTermFromRitaj(Long institutionId, String baseFileName) {
-        log.info("🚀 [Ritaj Sync] بدء المزامنة الموحدة والترجمة التلقائية للملف: {}", baseFileName);
+        log.info("🚀 [Ritaj Sync] بدء مزامنة ملف JSON: {}", baseFileName);
 
         Institution institution = institutionRepository.findById(institutionId)
-                .orElseThrow(() -> new IllegalArgumentException("المؤسسة غير موجودة"));
+                .orElseThrow(() -> new IllegalArgumentException("المؤسسة غير موجودة: " + institutionId));
 
-        // 1. جلب محتوى الصفحات (العربية والإنجليزية) من الـ Storage
-        RitajFetchedPagesDto pages = ritajFetchService.fetchArabicAndEnglishPages(baseFileName);
+        RitajFetchedPagesDto pages = ritajFetchService.fetchJsonFile(baseFileName);
 
-        // 2. تحديد الفصل الدراسي (مثلاً: الفصل الأول 2025/2026)
-        Term term = resolveOrCreateTermFromText(pages.getArabicContent(), institution);
+        List<RitajCourseDto> courses = ritajParserService.parseJson(pages.getJsonContent());
 
-        // 3. استدعاء الـ Parser الذي يقوم بدمج الملفين (Ar + En) في قائمة DTOs واحدة
-        List<RitajCourseDto> mergedCourses = ritajParserService.parseCourses(
-                pages.getArabicContent(),
-                pages.getEnglishContent()
-        );
+        if (courses == null || courses.isEmpty()) {
+            throw new IllegalArgumentException("ملف JSON لا يحتوي على مساقات صالحة");
+        }
+
+        Term term = getOrCreateCurrentRitajTerm(institution);
 
         SyncCounters counters = new SyncCounters();
 
-        // 4. معالجة البيانات المدمجة وتخزينها في قاعدة البيانات
-        for (RitajCourseDto courseDto : mergedCourses) {
-            // فلترة المواد الفارغة (null codes) لضمان نظافة البيانات
-            if (courseDto.getCode() == null || courseDto.getCode().isBlank()) continue;
+        for (RitajCourseDto courseDto : courses) {
+            if (courseDto.getCode() == null || courseDto.getCode().isBlank()) {
+                continue;
+            }
 
             try {
                 processCourseSync(courseDto, institution, term, counters);
             } catch (Exception e) {
-                log.error("❌ [Ritaj Sync] فشل مزامنة المساق {}: {}", courseDto.getCode(), e.getMessage());
-                // اختياري: يمكنك إكمال الحلقة أو عمل throw حسب رغبتك في الـ Rollback
+                log.error("❌ [Ritaj Sync] فشل مزامنة المساق {}: {}", courseDto.getCode(), e.getMessage(), e);
+                throw e;
             }
         }
 
         log.info("✅ [Ritaj Sync] اكتملت المهمة بنجاح: {}", counters);
+
         return buildSyncResult(counters);
     }
 
-    private void processCourseSync(RitajCourseDto dto, Institution inst, Term term, SyncCounters counters) {
-        // تحديث/إنشاء الكلية والقسم مع دعم الأسماء الإنجليزية
-        Faculty faculty = upsertFaculty(dto, inst, counters);
-        Department dept = upsertDepartment(dto, faculty, counters);
+    private Term getOrCreateCurrentRitajTerm(Institution institution) {
+        Term term = termRepository.findByTermCodeAndInstitution(DEFAULT_TERM_CODE, institution)
+                .orElseGet(() -> {
+                    Term newTerm = new Term();
+                    newTerm.setInstitution(institution);
+                    newTerm.setExternalId(DEFAULT_TERM_CODE);
+                    newTerm.setTermCode(DEFAULT_TERM_CODE);
+                    newTerm.setName(DEFAULT_TERM_NAME);
+                    newTerm.setAcademicYear(DEFAULT_ACADEMIC_YEAR);
+                    newTerm.setSeason(resolveDefaultSeason());
+                    newTerm.setStartDate(LocalDate.of(2026, 1, 25));
+                    newTerm.setEndDate(LocalDate.of(2026, 5, 30));
+                    newTerm.setIsCurrent(true);
 
-        // تحديث/إنشاء المساق (تخزين الاسم الإنجليزي ARCH131 -> Introduction to...)
-        Course course = upsertCourse(dto, inst, dept, counters);
+                    return termRepository.save(newTerm);
+                });
 
-        for (RitajSectionDto secDto : dto.getSections()) {
-            // معالجة المدرس (تحويل TBD وتخزين الاسم العربي والإنجليزي)
-            Instructor instructor = upsertInstructor(
-                    secDto.getInstructorNameArabic(),
-                    secDto.getInstructorNameEnglish(),
-                    inst, dept, dto.getCode(), secDto.getSectionNumber(), counters
-            );
+        termRepository.findAllByInstitution(institution).forEach(existingTerm -> {
+            existingTerm.setIsCurrent(existingTerm.getId().equals(term.getId()));
+            termRepository.save(existingTerm);
+        });
 
-            // تحديث/إنشاء الشعبة (تحويل "محاضرة" إلى LECTURE Enum)
-            CourseSection section = upsertSection(secDto, course, term, instructor, counters);
-
-            // تحديث أوقات المحاضرات (Sessions)
-            refreshSectionSessions(section, secDto, counters);
-        }
-
-        // ربط المختبرات بالمحاضرات الأساسية
-        linkLabsToLectures(course, term, dto.getSections());
+        return term;
     }
 
-    private Faculty upsertFaculty(RitajCourseDto dto, Institution inst, SyncCounters counters) {
-        String extId = firstNonBlank(dto.getFacultyExternalId(), dto.getFacultyNameArabic(), "Unknown Faculty");
-        return facultyRepository.findByExternalIdAndInstitution(extId, inst)
-                .map(f -> {
-                    facultySyncMapper.map(dto, f, inst);
-                    f.setNameEnglish(dto.getFacultyNameEnglish()); // تأكيد تخزين الإنجليزي
-                    return facultyRepository.save(f);
+    private Season resolveDefaultSeason() {
+        try {
+            return Season.valueOf("SECOND");
+        } catch (Exception ignored) {
+            try {
+                return Season.valueOf("SPRING");
+            } catch (Exception ignoredAgain) {
+                return Season.values()[0];
+            }
+        }
+    }
+
+    private void processCourseSync(
+            RitajCourseDto dto,
+            Institution institution,
+            Term term,
+            SyncCounters counters
+    ) {
+        Faculty faculty = upsertFaculty(dto, institution, counters);
+        Department department = upsertDepartment(dto, faculty, counters);
+        Course course = upsertCourse(dto, institution, department, counters);
+
+        if (dto.getSections() == null || dto.getSections().isEmpty()) {
+            return;
+        }
+
+        for (RitajSectionDto sectionDto : dto.getSections()) {
+            Instructor instructor = upsertInstructor(
+                    sectionDto.getInstructorNameArabic(),
+                    sectionDto.getInstructorNameEnglish(),
+                    institution,
+                    department,
+                    dto.getCode(),
+                    sectionDto.getSectionNumber(),
+                    counters
+            );
+
+            CourseSection section = upsertSection(sectionDto, course, term, instructor, counters);
+
+            refreshSectionSessions(section, sectionDto, counters);
+        }
+
+        linkLabsToLectures(course, term, counters);
+    }
+
+    private Faculty upsertFaculty(RitajCourseDto dto, Institution institution, SyncCounters counters) {
+        String externalId = firstNonBlank(
+                dto.getFacultyExternalId(),
+                dto.getFacultyNameArabic(),
+                dto.getFacultyNameEnglish(),
+                "Unknown Faculty"
+        );
+
+        return facultyRepository.findByExternalIdAndInstitution(externalId, institution)
+                .map(faculty -> {
+                    facultySyncMapper.map(dto, faculty, institution);
+                    faculty.setExternalId(externalId);
+                    faculty.setNameEnglish(dto.getFacultyNameEnglish());
+                    faculty.setIsActive(true);
+                    return facultyRepository.save(faculty);
                 })
                 .orElseGet(() -> {
-                    Faculty f = new Faculty();
-                    facultySyncMapper.map(dto, f, inst);
-                    f.setExternalId(extId);
-                    f.setNameEnglish(dto.getFacultyNameEnglish());
+                    Faculty faculty = new Faculty();
+                    facultySyncMapper.map(dto, faculty, institution);
+                    faculty.setExternalId(externalId);
+                    faculty.setNameEnglish(dto.getFacultyNameEnglish());
+                    faculty.setIsActive(true);
                     counters.facultiesCreated++;
-                    return facultyRepository.save(f);
+                    return facultyRepository.save(faculty);
                 });
     }
 
     private Department upsertDepartment(RitajCourseDto dto, Faculty faculty, SyncCounters counters) {
-        String extId = firstNonBlank(dto.getDepartmentExternalId(), dto.getDepartmentNameArabic(), "Unknown Department");
-        return departmentRepository.findByExternalIdAndFaculty(extId, faculty)
-                .map(d -> {
-                    departmentSyncMapper.map(dto, d, faculty);
-                    d.setNameEnglish(dto.getDepartmentNameEnglish()); // تأكيد تخزين الإنجليزي
-                    return departmentRepository.save(d);
+        String nameArabic = firstNonBlank(dto.getDepartmentNameArabic(), "Unknown Department");
+
+        String externalId = firstNonBlank(
+                dto.getDepartmentExternalId(),
+                dto.getDepartmentNameArabic(),
+                dto.getDepartmentNameEnglish(),
+                "Unknown Department"
+        );
+
+        Optional<Department> existingDepartment = findDepartmentSafely(externalId, nameArabic, faculty);
+
+        return existingDepartment
+                .map(department -> {
+                    departmentSyncMapper.map(dto, department, faculty);
+                    department.setExternalId(firstNonBlank(department.getExternalId(), externalId));
+                    department.setNameArabic(nameArabic);
+                    department.setNameEnglish(dto.getDepartmentNameEnglish());
+                    department.setProgramNameArabic(dto.getProgramNameArabic());
+                    department.setProgramNameEnglish(dto.getProgramNameEnglish());
+                    department.setFaculty(faculty);
+                    department.setIsActive(true);
+                    return departmentRepository.save(department);
                 })
                 .orElseGet(() -> {
-                    Department d = new Department();
-                    departmentSyncMapper.map(dto, d, faculty);
-                    d.setExternalId(extId);
-                    d.setNameEnglish(dto.getDepartmentNameEnglish());
+                    Department department = new Department();
+                    departmentSyncMapper.map(dto, department, faculty);
+                    department.setExternalId(externalId);
+                    department.setNameArabic(nameArabic);
+                    department.setNameEnglish(dto.getDepartmentNameEnglish());
+                    department.setProgramNameArabic(dto.getProgramNameArabic());
+                    department.setProgramNameEnglish(dto.getProgramNameEnglish());
+                    department.setFaculty(faculty);
+                    department.setIsActive(true);
+
                     counters.departmentsCreated++;
-                    return departmentRepository.save(d);
+                    return departmentRepository.save(department);
                 });
     }
 
-    private Course upsertCourse(RitajCourseDto dto, Institution inst, Department dept, SyncCounters counters) {
-        return courseRepository.findByCodeAndInstitution(dto.getCode(), inst)
-                .map(c -> {
-                    courseSyncMapper.map(dto, c, inst, dept);
-                    // تحديث الاسم الإنجليزي الحقيقي من الملف المدمج
-                    if (dto.getNameEnglish() != null && !dto.getNameEnglish().equalsIgnoreCase(dto.getCode())) {
-                        c.setNameEnglish(dto.getNameEnglish());
-                    }
+    private Optional<Department> findDepartmentSafely(
+            String externalId,
+            String nameArabic,
+            Faculty faculty
+    ) {
+        if (externalId != null && !externalId.isBlank()) {
+            Optional<Department> byExternalIdAndFaculty =
+                    departmentRepository.findByExternalIdAndFaculty(externalId, faculty);
+
+            if (byExternalIdAndFaculty.isPresent()) {
+                return byExternalIdAndFaculty;
+            }
+        }
+
+        if (nameArabic == null || nameArabic.isBlank()) {
+            return Optional.empty();
+        }
+
+        List<Department> byNameArabic = entityManager.createQuery("""
+                        SELECT d
+                        FROM Department d
+                        WHERE d.nameArabic = :nameArabic
+                        """, Department.class)
+                .setParameter("nameArabic", nameArabic)
+                .setMaxResults(1)
+                .getResultList();
+
+        if (!byNameArabic.isEmpty()) {
+            return Optional.of(byNameArabic.get(0));
+        }
+
+        return Optional.empty();
+    }
+
+    private Course upsertCourse(
+            RitajCourseDto dto,
+            Institution institution,
+            Department department,
+            SyncCounters counters
+    ) {
+        return courseRepository.findByCodeAndInstitution(dto.getCode(), institution)
+                .map(course -> {
+                    courseSyncMapper.map(dto, course, institution, department);
+                    course.setNameEnglish(dto.getNameEnglish());
+                    course.setProgramNameArabic(dto.getProgramNameArabic());
+                    course.setProgramNameEnglish(dto.getProgramNameEnglish());
                     counters.coursesUpdated++;
-                    return courseRepository.save(c);
+                    return courseRepository.save(course);
                 })
                 .orElseGet(() -> {
-                    Course c = new Course();
-                    courseSyncMapper.map(dto, c, inst, dept);
-                    c.setNameEnglish(dto.getNameEnglish());
+                    Course course = new Course();
+                    courseSyncMapper.map(dto, course, institution, department);
+                    course.setNameEnglish(dto.getNameEnglish());
+                    course.setProgramNameArabic(dto.getProgramNameArabic());
+                    course.setProgramNameEnglish(dto.getProgramNameEnglish());
                     counters.coursesCreated++;
-                    return courseRepository.save(c);
+                    return courseRepository.save(course);
                 });
     }
 
-    private Instructor upsertInstructor(String ar, String en, Institution inst, Department dept, String code, String sec, SyncCounters c) {
-        String lookupName = firstNonBlank(ar, en);
-        if (lookupName == null || lookupName.equalsIgnoreCase("N/A")) return null;
+    private Instructor upsertInstructor(
+            String nameArabic,
+            String nameEnglish,
+            Institution institution,
+            Department department,
+            String courseCode,
+            String sectionNumber,
+            SyncCounters counters
+    ) {
+        String lookupName = firstNonBlank(nameArabic, nameEnglish);
 
-        // تنظيف TBD لتظهر بشكل لائق للمستخدم
-        String finalEn = "TBD".equalsIgnoreCase(en) ? "To Be Determined" : en;
+        if (lookupName == null
+                || lookupName.equalsIgnoreCase("N/A")
+                || lookupName.equalsIgnoreCase("NA")
+                || lookupName.equalsIgnoreCase("TBD")
+                || lookupName.equalsIgnoreCase("To Be Determined")) {
+            return null;
+        }
 
-        return instructorRepository.findByFullNameArabicAndInstitution(ar, inst)
-                .map(ins -> {
-                    if (finalEn != null) ins.setFullNameEnglish(finalEn);
-                    return instructorRepository.save(ins);
+        String finalArabic = firstNonBlank(nameArabic, lookupName);
+        String finalEnglish = "TBD".equalsIgnoreCase(nameEnglish)
+                ? "To Be Determined"
+                : nameEnglish;
+
+        return instructorRepository.findByFullNameArabicAndInstitution(finalArabic, institution)
+                .map(instructor -> {
+                    instructor.setFullNameEnglish(finalEnglish);
+                    instructor.setDepartment(department);
+                    return instructorRepository.save(instructor);
                 })
                 .orElseGet(() -> {
+                    String rawPassword = passwordService.generateInitialPassword(
+                            lookupName,
+                            courseCode,
+                            sectionNumber
+                    );
+
                     User user = new User();
                     user.setFullName(lookupName);
-                    user.setEmail(identityService.generateSystemEmail(lookupName, inst));
-                    user.setPasswordHash(passwordEncoder.encode(passwordService.generateInitialPassword(lookupName, code, sec)));
+                    user.setEmail(identityService.generateSystemEmail(lookupName, institution));
+                    user.setPasswordHash(passwordEncoder.encode(rawPassword));
                     user.setRole(UserRole.INSTRUCTOR);
                     user.setActive(true);
+                    user.setEmailVerified(false);
+                    user.setPhoneVerified(false);
+
                     userRepository.save(user);
 
-                    Instructor ins = new Instructor();
-                    ins.setFullNameArabic(ar);
-                    ins.setFullNameEnglish(finalEn);
-                    ins.setInstitution(inst);
-                    ins.setDepartment(dept);
-                    ins.setUser(user);
-                    c.instructorsCreated++;
-                    return instructorRepository.save(ins);
+                    log.warn("👨‍🏫 [Instructor Account] created email={}, password={}",
+                            user.getEmail(),
+                            rawPassword
+                    );
+
+                    Instructor instructor = new Instructor();
+                    instructor.setExternalId(null);
+                    instructor.setFullNameArabic(finalArabic);
+                    instructor.setFullNameEnglish(finalEnglish);
+                    instructor.setInstitution(institution);
+                    instructor.setDepartment(department);
+                    instructor.setUser(user);
+                    instructor.setAccountConfirmed(false);
+
+                    counters.instructorsCreated++;
+
+                    return instructorRepository.save(instructor);
                 });
     }
 
-    private CourseSection upsertSection(RitajSectionDto dto, Course c, Term t, Instructor ins, SyncCounters counters) {
-        // تحويل "محاضرة" -> SectionType.LECTURE عبر الـ Mapper
-        SectionType type = courseSectionSyncMapper.mapSectionType(dto.getSectionType());
+    private CourseSection upsertSection(
+            RitajSectionDto dto,
+            Course course,
+            Term term,
+            Instructor instructor,
+            SyncCounters counters
+    ) {
+        SectionType sectionType = courseSectionSyncMapper.mapSectionType(dto.getSectionType());
 
-        return courseSectionRepository.findByCourseAndTermAndSectionNumberAndSectionType(c, t, dto.getSectionNumber(), type)
-                .map(s -> {
-                    courseSectionSyncMapper.map(dto, s, c, t, ins);
-                    s.setSectionType(type); // تأكيد النوع المترجم
+        return courseSectionRepository
+                .findByCourseAndTermAndSectionNumberAndSectionType(
+                        course,
+                        term,
+                        dto.getSectionNumber(),
+                        sectionType
+                )
+                .map(section -> {
+                    courseSectionSyncMapper.map(dto, section, course, term, instructor);
+                    section.setSectionType(sectionType);
                     counters.sectionsUpdated++;
-                    return courseSectionRepository.save(s);
+                    return courseSectionRepository.save(section);
                 })
                 .orElseGet(() -> {
-                    CourseSection s = new CourseSection();
-                    courseSectionSyncMapper.map(dto, s, c, t, ins);
-                    s.setSectionType(type);
+                    CourseSection section = new CourseSection();
+                    courseSectionSyncMapper.map(dto, section, course, term, instructor);
+                    section.setSectionType(sectionType);
                     counters.sectionsCreated++;
-                    return courseSectionRepository.save(s);
+                    return courseSectionRepository.save(section);
                 });
     }
 
-    private void refreshSectionSessions(CourseSection sec, RitajSectionDto dto, SyncCounters c) {
-        classSessionRepository.deleteByCourseSection(sec);
-        if (dto.getSessions() != null) {
-            for (RitajClassSessionDto sDto : dto.getSessions()) {
-                classSessionRepository.save(classSessionSyncMapper.toEntity(sDto, sec));
-                c.sessionsCreated++;
-            }
+    private void refreshSectionSessions(
+            CourseSection section,
+            RitajSectionDto dto,
+            SyncCounters counters
+    ) {
+        classSessionRepository.deleteByCourseSection(section);
+
+        if (dto.getSessions() == null || dto.getSessions().isEmpty()) {
+            return;
+        }
+
+        for (RitajClassSessionDto sessionDto : dto.getSessions()) {
+            ClassSession session = classSessionSyncMapper.toEntity(sessionDto, section);
+            classSessionRepository.save(session);
+            counters.sessionsCreated++;
         }
     }
 
-    private void linkLabsToLectures(Course course, Term term, List<RitajSectionDto> sectionDtos) {
-        // 1. جلب كل الشعب اللي تخزنت في قاعدة البيانات لهاد المساق في هاد الفصل
+    private void linkLabsToLectures(Course course, Term term, SyncCounters counters) {
         List<CourseSection> savedSections = courseSectionRepository.findByCourseAndTerm(course, term);
 
         for (CourseSection section : savedSections) {
-            // 2. إذا كانت الشعبة الحالية "مختبر" (LAB)
-            if (section.getSectionType() == SectionType.LAB) {
+            if (section.getSectionType() != SectionType.LAB) {
+                continue;
+            }
 
-                // 3. ابحث عن "محاضرة" (LECTURE) بيعطيها نفس الدكتور (Instructor)
-                Optional<CourseSection> parentLecture = savedSections.stream()
-                        .filter(s -> s.getSectionType() == SectionType.LECTURE) // لازم تكون محاضرة
-                        .filter(s -> s.getInstructor() != null && section.getInstructor() != null)
-                        // المقارنة عن طريق الـ ID تبع المدرس (الأضمن)
-                        .filter(s -> s.getInstructor().getId().equals(section.getInstructor().getId()))
-                        .findFirst();
+            Optional<CourseSection> parentLecture = savedSections.stream()
+                    .filter(candidate -> candidate.getSectionType() == SectionType.LECTURE)
+                    .filter(candidate -> candidate.getInstructor() != null && section.getInstructor() != null)
+                    .filter(candidate -> candidate.getInstructor().getId().equals(section.getInstructor().getId()))
+                    .findFirst();
 
-                if (parentLecture.isPresent()) {
-                    section.setParentLectureSection(parentLecture.get());
-                    courseSectionRepository.save(section);
-                    log.info("🔗 [Link Success] تم ربط مختبر (شعبة {}) بالمحاضرة الأساسية للدكتور: {}",
-                            section.getSectionNumber(), section.getInstructor().getFullNameArabic());
-                } else {
-                    log.warn("⚠️ [Link Fail] لم نجد محاضرة أساسية لنفس الدكتور لمختبر شعبة {}", section.getSectionNumber());
-                }
+            if (parentLecture.isPresent()) {
+                section.setParentLectureSection(parentLecture.get());
+                courseSectionRepository.save(section);
+                counters.labsLinked++;
+
+                log.info(
+                        "🔗 [Link Success] تم ربط مختبر شعبة {} بمحاضرة نفس المدرس",
+                        section.getSectionNumber()
+                );
+            } else {
+                log.warn(
+                        "⚠️ [Link Fail] لم نجد محاضرة أساسية لنفس المدرس لمختبر شعبة {}",
+                        section.getSectionNumber()
+                );
             }
         }
     }
 
-    private Term resolveOrCreateTermFromText(String text, Institution institution) {
-        String termName = ritajTermParserHelper.extractTermFromText(text);
-        if (termName == null) throw new IllegalStateException("لم نتمكن من تحديد الفصل الدراسي من الملف");
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
 
-        String code = termName.trim().replace(" ", "_").toUpperCase().replaceAll("[^A-Z0-9_]", "");
-        Term term = termRepository.findByTermCodeAndInstitution(code, institution)
-                .orElseGet(() -> termRepository.save(termSyncMapper.mapToEntity(termName, institution)));
-
-        // تعيين الفصل كفصل حالي (Is Current)
-        termRepository.findAllByInstitution(institution).forEach(t -> {
-            t.setIsCurrent(t.getId().equals(term.getId()));
-            termRepository.save(t);
-        });
-        return term;
-    }
-
-    private String firstNonBlank(String... vs) {
-        for (String v : vs) if (v != null && !v.isBlank()) return v.trim();
         return null;
     }
 
-    private RitajSyncResult buildSyncResult(SyncCounters c) {
+    private RitajSyncResult buildSyncResult(SyncCounters counters) {
         return RitajSyncResult.builder()
-                .facultiesCreated(c.facultiesCreated).departmentsCreated(c.departmentsCreated)
-                .coursesCreated(c.coursesCreated).coursesUpdated(c.coursesUpdated)
-                .instructorsCreated(c.instructorsCreated).sectionsCreated(c.sectionsCreated)
-                .sectionsUpdated(c.sectionsUpdated).sessionsCreated(c.sessionsCreated)
+                .facultiesCreated(counters.facultiesCreated)
+                .departmentsCreated(counters.departmentsCreated)
+                .coursesCreated(counters.coursesCreated)
+                .coursesUpdated(counters.coursesUpdated)
+                .instructorsCreated(counters.instructorsCreated)
+                .sectionsCreated(counters.sectionsCreated)
+                .sectionsUpdated(counters.sectionsUpdated)
+                .sessionsCreated(counters.sessionsCreated)
+                .labsLinked(counters.labsLinked)
+                .deletedSections(counters.deletedSections)
+                .deletedSessions(counters.deletedSessions)
                 .build();
     }
 
     private static class SyncCounters {
-        int facultiesCreated, departmentsCreated, coursesCreated, coursesUpdated, instructorsCreated, sectionsCreated, sectionsUpdated, sessionsCreated;
+        int facultiesCreated;
+        int departmentsCreated;
+        int coursesCreated;
+        int coursesUpdated;
+        int instructorsCreated;
+        int sectionsCreated;
+        int sectionsUpdated;
+        int sessionsCreated;
+        int labsLinked;
+        int deletedSections;
+        int deletedSessions;
+
         @Override
         public String toString() {
-            return String.format("النتائج: [كليات: %d, دوائر: %d, مساقات جديدة: %d, شعب: %d]",
-                    facultiesCreated, departmentsCreated, coursesCreated, sectionsCreated);
+            return String.format(
+                    "SyncCounters{facultiesCreated=%d, departmentsCreated=%d, coursesCreated=%d, coursesUpdated=%d, instructorsCreated=%d, sectionsCreated=%d, sectionsUpdated=%d, sessionsCreated=%d, labsLinked=%d}",
+                    facultiesCreated,
+                    departmentsCreated,
+                    coursesCreated,
+                    coursesUpdated,
+                    instructorsCreated,
+                    sectionsCreated,
+                    sectionsUpdated,
+                    sessionsCreated,
+                    labsLinked
+            );
         }
     }
 }

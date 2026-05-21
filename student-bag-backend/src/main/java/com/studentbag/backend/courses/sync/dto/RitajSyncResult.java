@@ -14,4 +14,7 @@ public class RitajSyncResult {
     private int sectionsCreated;
     private int sectionsUpdated;
     private int sessionsCreated;
+    private int labsLinked;
+    private int deletedSections;
+    private int deletedSessions;
 }

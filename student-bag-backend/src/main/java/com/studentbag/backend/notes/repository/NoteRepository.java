@@ -6,6 +6,7 @@ import com.studentbag.backend.notes.entity.Note;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface NoteRepository extends JpaRepository<Note, Long> {
 
@@ -37,7 +38,11 @@ public interface NoteRepository extends JpaRepository<Note, Long> {
             Long studentId,
             String title
     );
+    Optional<Note> findByIdAndStudentIdAndIsDeletedFalse(Long noteId, Long studentId);
 
+    List<Note> findTop10ByStudentIdAndIsDeletedFalseAndIsArchivedFalseOrderByIsPinnedDescIsImportantDescUpdatedAtDesc(
+            Long studentId
+    );
     List<Note> findByStudent_IdAndIsDeletedFalseOrderByIsPinnedDescCreatedAtDesc(Long studentId);
 
     List<Note> findByStudent_IdAndIsDeletedFalseAndIsArchivedFalseOrderByIsPinnedDescCreatedAtDesc(

@@ -66,8 +66,13 @@ public class ResourceIntegrationServiceImpl implements ResourceIntegrationServic
     ) {
         Student student = getStudentByUserId(currentUserId);
 
-        List<ActiveScheduleCourseDTO> activeCourses =
-                scheduleManagementService.getActiveScheduleCourses(student.getId(), termId);
+        List<ActiveScheduleCourseDTO> activeCourses;
+
+        try {
+            activeCourses = scheduleManagementService.getActiveScheduleCourses(student.getId(), termId);
+        } catch (Exception e) {
+            return List.of();
+        }
 
         return activeCourses.stream()
                 .map(course -> ResourceCourseSummaryResponse.builder()

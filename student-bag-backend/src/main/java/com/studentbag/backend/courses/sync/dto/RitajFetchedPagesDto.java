@@ -8,7 +8,11 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @NoArgsConstructor
 public class RitajFetchedPagesDto {
-    // تم تغيير المسميات من Html إلى Content لتعبر عن ملفات الـ txt
+    
+    private String jsonContent;
+
+    @Deprecated
     private String arabicContent;
+    @Deprecated
     private String englishContent;
 }

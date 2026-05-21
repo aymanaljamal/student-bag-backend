@@ -48,5 +48,44 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findByStudentIdAndCourseIdAndIsDeletedFalse(Long studentId, Long courseId);
 
     Optional<Task> findByIdAndStudentIdAndIsDeletedFalse(Long id, Long studentId);
+    List<Task> findTop10ByStudentIdAndStatusNotAndArchivedFalseAndIsDeletedFalseOrderByDueDateTimeAsc(
+            Long studentId,
+            TaskStatus status
+    );
 
+    @Query("""
+    SELECT DISTINCT t
+    FROM Task t
+    LEFT JOIN FETCH t.course c
+    LEFT JOIN FETCH t.labels l
+    LEFT JOIN FETCH t.subtasks st
+    LEFT JOIN FETCH t.attachments a
+    WHERE t.student.id = :studentId
+      AND t.status <> com.studentbag.backend.domain.enums.tasks.TaskStatus.COMPLETED
+      AND t.dueDateTime < :now
+      AND t.archived = false
+      AND t.isDeleted = false
+    ORDER BY t.dueDateTime ASC
+""")
+    List<Task> findOverdueTasksForAi(Long studentId, LocalDateTime now);
+
+    @Query("""
+    SELECT DISTINCT t
+    FROM Task t
+    LEFT JOIN FETCH t.course c
+    LEFT JOIN FETCH t.labels l
+    LEFT JOIN FETCH t.subtasks st
+    LEFT JOIN FETCH t.attachments a
+    WHERE t.student.id = :studentId
+      AND t.status <> com.studentbag.backend.domain.enums.tasks.TaskStatus.COMPLETED
+      AND t.dueDateTime BETWEEN :start AND :end
+      AND t.archived = false
+      AND t.isDeleted = false
+    ORDER BY t.dueDateTime ASC
+""")
+    List<Task> findTasksDueBetweenForAi(
+            Long studentId,
+            LocalDateTime start,
+            LocalDateTime end
+    );
 }

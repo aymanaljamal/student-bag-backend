@@ -1,0 +1,12 @@
+package com.studentbag.backend.chatbot.exception;
+
+public enum AiErrorCode {
+    AI_CONVERSATION_NOT_FOUND,
+    AI_MESSAGE_NOT_FOUND,
+    AI_STUDENT_NOT_FOUND,
+    AI_ACCESS_DENIED,
+    AI_CONTEXT_BUILD_FAILED,
+    AI_PROVIDER_FAILED,
+    AI_USAGE_LIMIT_EXCEEDED,
+    AI_INVALID_REQUEST
+}

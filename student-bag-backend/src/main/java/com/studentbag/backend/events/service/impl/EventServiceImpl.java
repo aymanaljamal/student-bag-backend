@@ -1,9 +1,19 @@
 package com.studentbag.backend.events.service.impl;
 
 import com.studentbag.backend.common.exception.ResourceNotFoundException;
+import com.studentbag.backend.domain.enums.UserRole;
+import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
+import com.studentbag.backend.domain.enums.notifications.NotificationChannel;
+import com.studentbag.backend.domain.enums.notifications.NotificationPriority;
+import com.studentbag.backend.domain.enums.notifications.NotificationTargetType;
+import com.studentbag.backend.domain.enums.notifications.NotificationType;
+import com.studentbag.backend.domain.enums.schedule.ScheduleSourceType;
+import com.studentbag.backend.domain.enums.schedule.ScheduleStatus;
+import com.studentbag.backend.events.dto.request.EventRegistrantsNotificationRequestDTO;
 import com.studentbag.backend.events.dto.request.EventRegistrationRequestDTO;
 import com.studentbag.backend.events.dto.request.EventRequestDTO;
 import com.studentbag.backend.events.dto.request.EventSearchRequestDTO;
+import com.studentbag.backend.events.dto.response.EventRegistrationInfoDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;
 import com.studentbag.backend.events.dto.response.OpportunityResponseDTO;
 import com.studentbag.backend.events.entity.Event;
@@ -15,6 +25,11 @@ import com.studentbag.backend.events.repository.EventRepository;
 import com.studentbag.backend.events.service.EventService;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.institution.repository.InstitutionRepository;
+import com.studentbag.backend.notifications.dto.request.CreateNotificationRequest;
+import com.studentbag.backend.notifications.service.NotificationService;
+import com.studentbag.backend.schedule.entity.ScheduleEntry;
+import com.studentbag.backend.schedule.entity.StudentSchedule;
+import com.studentbag.backend.schedule.repository.StudentScheduleRepository;
 import com.studentbag.backend.student.entity.Student;
 import com.studentbag.backend.student.repository.StudentRepository;
 import com.studentbag.backend.users.entity.User;
@@ -29,6 +44,7 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -42,6 +58,8 @@ public class EventServiceImpl implements EventService {
     private final InstitutionRepository institutionRepository;
     private final UserRepository userRepository;
     private final EventMapper eventMapper;
+    private final StudentScheduleRepository studentScheduleRepository;
+    private final NotificationService notificationService;
 
     @Override
     public EventResponseDTO createEvent(
@@ -50,14 +68,6 @@ public class EventServiceImpl implements EventService {
             String currentUserEmail
     ) {
         validateEventDates(request);
-
-        log.warn(
-                "CREATE EVENT REQUEST => title={}, isOpportunity={}, hasOpportunityDetails={}, eventType={}",
-                request.getTitle(),
-                request.getIsOpportunity(),
-                request.getOpportunityDetails() != null,
-                request.getEventType()
-        );
 
         Institution institution = getInstitutionById(institutionId);
         User creator = getUserByEmail(currentUserEmail);
@@ -95,18 +105,11 @@ public class EventServiceImpl implements EventService {
     ) {
         validateEventDates(request);
 
-        log.warn(
-                "UPDATE EVENT REQUEST => eventId={}, title={}, isOpportunity={}, hasOpportunityDetails={}, eventType={}",
-                eventId,
-                request.getTitle(),
-                request.getIsOpportunity(),
-                request.getOpportunityDetails() != null,
-                request.getEventType()
-        );
-
         User currentUser = getUserByEmail(currentUserEmail);
         Event existingEvent = getEventByIdOrThrow(eventId);
         Institution institution = getInstitutionById(institutionId);
+
+        validateEventOwnerOrAdmin(existingEvent, currentUser);
 
         eventMapper.updateEntity(existingEvent, request);
         existingEvent.setInstitution(institution);
@@ -127,6 +130,10 @@ public class EventServiceImpl implements EventService {
 
         Event savedEvent = eventRepository.save(existingEvent);
 
+        refreshEventEntriesInActiveSchedules(savedEvent);
+
+        notifyEventUpdated(savedEvent, currentUser);
+
         log.info(
                 "Updated event id={} updatedByUser={} isOpportunity={} hasOpportunity={}",
                 savedEvent.getId(),
@@ -139,13 +146,65 @@ public class EventServiceImpl implements EventService {
     }
 
     @Override
-    public EventResponseDTO finishEvent(Long eventId) {
+    public EventResponseDTO finishEvent(Long eventId, String currentUserEmail) {
+        User currentUser = getUserByEmail(currentUserEmail);
         Event event = getEventByIdOrThrow(eventId);
+
+        validateEventOwnerOrAdmin(event, currentUser);
+
         event.setEndDateTime(LocalDateTime.now());
 
         Event savedEvent = eventRepository.save(event);
 
+        removeEventEntriesFromRegisteredStudentsActiveSchedules(savedEvent);
+
+        notifyRegisteredStudents(
+                savedEvent,
+                "Event finished",
+                "The event \"" + safeTitle(savedEvent) + "\" has finished.",
+                "/student/events/" + savedEvent.getId()
+        );
+
+        notifyEventCreator(
+                savedEvent,
+                "Event finished",
+                "Your event \"" + safeTitle(savedEvent) + "\" has finished."
+        );
+
         log.info("Finished event id={}", savedEvent.getId());
+
+        return buildEventResponse(savedEvent, null);
+    }
+
+    @Override
+    public EventResponseDTO cancelEvent(Long eventId, String currentUserEmail) {
+        User currentUser = getUserByEmail(currentUserEmail);
+        Event event = getEventByIdOrThrow(eventId);
+
+        validateEventOwnerOrAdmin(event, currentUser);
+
+        if (event.getEndDateTime() == null || event.getEndDateTime().isAfter(LocalDateTime.now())) {
+            event.setEndDateTime(LocalDateTime.now());
+        }
+
+        Event savedEvent = eventRepository.save(event);
+
+        removeEventEntriesFromRegisteredStudentsActiveSchedules(savedEvent);
+
+        notifyRegisteredStudents(
+                savedEvent,
+                "Event cancelled",
+                "The event \"" + safeTitle(savedEvent) + "\" was cancelled.",
+                "/student/events/" + savedEvent.getId()
+        );
+
+        notifyEventCreator(
+                savedEvent,
+                "Event cancelled",
+                "Your event \"" + safeTitle(savedEvent) + "\" was cancelled."
+        );
+
+        log.info("Cancelled event id={}", savedEvent.getId());
 
         return buildEventResponse(savedEvent, null);
     }
@@ -154,6 +213,13 @@ public class EventServiceImpl implements EventService {
     public void deleteEvent(Long eventId) {
         Event event = getEventByIdOrThrow(eventId);
 
+        removeEventEntriesFromRegisteredStudentsActiveSchedules(event);
+
+        /*
+         * Hard delete:
+         * هذا للحذف الإداري النهائي فقط.
+         * لو بدك تحافظ على التسجيلات تاريخيًا، استخدم cancelEvent بدل deleteEvent.
+         */
         registrationRepository.deleteByEventId(eventId);
         eventRepository.delete(event);
 
@@ -232,6 +298,21 @@ public class EventServiceImpl implements EventService {
         registration.register();
         registrationRepository.save(registration);
 
+        addEventEntryToActiveSchedule(event, student);
+
+        notifyStudent(
+                student,
+                "Event registration confirmed",
+                "You are registered for \"" + safeTitle(event) + "\".",
+                "/student/events/" + event.getId()
+        );
+
+        notifyEventCreator(
+                event,
+                "New event registration",
+                studentName(student) + " registered for \"" + safeTitle(event) + "\"."
+        );
+
         log.info("Student {} registered for event {}", studentId, eventId);
     }
 
@@ -244,14 +325,347 @@ public class EventServiceImpl implements EventService {
                                 + " and student id: " + studentId
                 ));
 
+        Event event = registration.getEvent();
+        Student student = registration.getStudent();
+
         registrationRepository.delete(registration);
+
+        removeEventEntryFromActiveSchedule(eventId, studentId);
+
+        notifyStudent(
+                student,
+                "Event registration cancelled",
+                "Your registration for \"" + safeTitle(event) + "\" was cancelled.",
+                "/student/events/" + eventId
+        );
+
+        notifyEventCreator(
+                event,
+                "Event registration cancelled",
+                studentName(student) + " cancelled registration for \"" + safeTitle(event) + "\"."
+        );
 
         log.info("Student {} cancelled registration for event {}", studentId, eventId);
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<EventRegistrationInfoDTO> getEventRegistrations(
+            Long eventId,
+            String currentUserEmail
+    ) {
+        Event event = getEventByIdOrThrow(eventId);
+        User currentUser = getUserByEmail(currentUserEmail);
+
+        validateEventOwnerOrAdmin(event, currentUser);
+
+        return registrationRepository.findAllByEventId(eventId)
+                .stream()
+                .map(this::mapRegistrationInfo)
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public long getEventRegistrationCount(
+            Long eventId,
+            String currentUserEmail
+    ) {
+        Event event = getEventByIdOrThrow(eventId);
+        User currentUser = getUserByEmail(currentUserEmail);
+
+        validateEventOwnerOrAdmin(event, currentUser);
+
+        return registrationRepository.countByEventIdAndStatusIn(
+                eventId,
+                List.of(RegistrationStatus.REGISTERED, RegistrationStatus.CHECKED_IN)
+        );
+    }
+
+    @Override
     public void syncWithUniversityAPI(Long institutionId) {
         log.info("Sync with university API requested for institutionId={}", institutionId);
+    }
+
+    private void addEventEntryToActiveSchedule(Event event, Student student) {
+        if (event == null || student == null || student.getId() == null) {
+            return;
+        }
+
+        if (event.getStartDateTime() == null || event.getEndDateTime() == null) {
+            log.warn("Cannot add event {} to active schedule because date/time is missing.", event.getId());
+            return;
+        }
+
+        StudentSchedule activeSchedule = studentScheduleRepository
+                .findFirstByStudent_IdAndStatusOrderByActivatedAtDescCreatedAtDesc(
+                        student.getId(),
+                        ScheduleStatus.ACTIVE
+                )
+                .orElse(null);
+
+        if (activeSchedule == null) {
+            log.warn(
+                    "Student {} registered for event {}, but no active schedule was found.",
+                    student.getId(),
+                    event.getId()
+            );
+            return;
+        }
+
+        boolean alreadyExists = activeSchedule.getEntries()
+                .stream()
+                .anyMatch(entry ->
+                        entry.getSourceType() == ScheduleSourceType.EVENT
+                                && entry.getEvent() != null
+                                && Objects.equals(entry.getEvent().getId(), event.getId())
+                );
+
+        if (alreadyExists) {
+            return;
+        }
+
+        ScheduleEntry entry = ScheduleEntry.builder()
+                .schedule(activeSchedule)
+                .student(student)
+                .event(event)
+                .sourceType(ScheduleSourceType.EVENT)
+                .title(event.getTitle())
+                .description(event.getDescription())
+                .location(event.getLocation())
+                .startDateTime(event.getStartDateTime())
+                .endDateTime(event.getEndDateTime())
+                .isAllDay(false)
+                .isLocked(true)
+                .colorHex("#2563EB")
+                .build();
+
+        activeSchedule.addEntry(entry);
+        studentScheduleRepository.save(activeSchedule);
+    }
+
+    private void removeEventEntryFromActiveSchedule(Long eventId, Long studentId) {
+        StudentSchedule activeSchedule = studentScheduleRepository
+                .findFirstByStudent_IdAndStatusOrderByActivatedAtDescCreatedAtDesc(
+                        studentId,
+                        ScheduleStatus.ACTIVE
+                )
+                .orElse(null);
+
+        if (activeSchedule == null) {
+            return;
+        }
+
+        activeSchedule.getEntries().removeIf(entry ->
+                entry.getSourceType() == ScheduleSourceType.EVENT
+                        && entry.getEvent() != null
+                        && Objects.equals(entry.getEvent().getId(), eventId)
+        );
+
+        studentScheduleRepository.save(activeSchedule);
+    }
+
+    private void removeEventEntriesFromRegisteredStudentsActiveSchedules(Event event) {
+        if (event == null || event.getId() == null) {
+            return;
+        }
+
+        List<EventRegistration> registrations =
+                registrationRepository.findAllByEventId(event.getId());
+
+        for (EventRegistration registration : registrations) {
+            if (registration.getStudent() == null || registration.getStudent().getId() == null) {
+                continue;
+            }
+
+            removeEventEntryFromActiveSchedule(
+                    event.getId(),
+                    registration.getStudent().getId()
+            );
+        }
+    }
+
+    private void refreshEventEntriesInActiveSchedules(Event event) {
+        if (event == null || event.getId() == null) {
+            return;
+        }
+
+        List<EventRegistration> registrations =
+                registrationRepository.findAllByEventId(event.getId());
+
+        for (EventRegistration registration : registrations) {
+            Student student = registration.getStudent();
+
+            if (student == null || student.getId() == null) {
+                continue;
+            }
+
+            removeEventEntryFromActiveSchedule(event.getId(), student.getId());
+
+            if (!isEventEnded(event)) {
+                addEventEntryToActiveSchedule(event, student);
+            }
+        }
+    }
+
+    private void notifyEventUpdated(Event event, User updatedBy) {
+        if (event == null || event.getId() == null || updatedBy == null) {
+            return;
+        }
+
+        boolean updatedByAdmin = updatedBy.getRole() == UserRole.ADMINISTRATOR;
+        boolean updatedByCreator = event.getCreatedByUser() != null
+                && Objects.equals(event.getCreatedByUser().getId(), updatedBy.getId());
+
+        String studentBody = updatedByAdmin
+                ? "The event \"" + safeTitle(event) + "\" has been updated by the administration. Please review the latest details."
+                : "The event \"" + safeTitle(event) + "\" has been updated. Please review the latest details.";
+
+        notifyRegisteredStudents(
+                event,
+                "Event updated",
+                studentBody,
+                "/student/events/" + event.getId()
+        );
+
+        if (updatedByAdmin && !updatedByCreator) {
+            notifyEventCreator(
+                    event,
+                    "Your event was updated by admin",
+                    "An administrator updated your event \"" + safeTitle(event) + "\"."
+            );
+        }
+    }
+
+    private void notifyRegisteredStudents(
+            Event event,
+            String title,
+            String body,
+            String route
+    ) {
+        if (event == null || event.getId() == null) {
+            return;
+        }
+
+        List<EventRegistration> registrations =
+                registrationRepository.findAllByEventId(event.getId());
+
+        List<UUID> recipientUserIds = registrations.stream()
+                .map(EventRegistration::getStudent)
+                .filter(Objects::nonNull)
+                .map(Student::getUser)
+                .filter(Objects::nonNull)
+                .map(User::getId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (recipientUserIds.isEmpty()) {
+            return;
+        }
+
+        CreateNotificationRequest request = new CreateNotificationRequest();
+        request.setTitle(title);
+        request.setBody(body);
+        request.setType(NotificationType.EVENT);
+        request.setPriority(NotificationPriority.HIGH);
+        request.setChannel(NotificationChannel.BOTH);
+        request.setTargetType(NotificationTargetType.INTERNAL_ROUTE);
+        request.setTargetValue(route);
+        request.setBroadcastToAll(false);
+        request.setRecipientUserIds(recipientUserIds);
+
+        notificationService.createAndSend(request);
+    }
+
+    private void notifyStudent(
+            Student student,
+            String title,
+            String body,
+            String route
+    ) {
+        if (student == null || student.getUser() == null || student.getUser().getId() == null) {
+            return;
+        }
+
+        CreateNotificationRequest request = new CreateNotificationRequest();
+        request.setTitle(title);
+        request.setBody(body);
+        request.setType(NotificationType.EVENT);
+        request.setPriority(NotificationPriority.NORMAL);
+        request.setChannel(NotificationChannel.BOTH);
+        request.setTargetType(NotificationTargetType.INTERNAL_ROUTE);
+        request.setTargetValue(route);
+        request.setBroadcastToAll(false);
+        request.setRecipientUserIds(List.of(student.getUser().getId()));
+
+        notificationService.createAndSend(request);
+    }
+
+    private void notifyEventCreator(
+            Event event,
+            String title,
+            String body
+    ) {
+        if (event == null
+                || event.getCreatedByUser() == null
+                || event.getCreatedByUser().getId() == null) {
+            return;
+        }
+
+        CreateNotificationRequest request = new CreateNotificationRequest();
+        request.setTitle(title);
+        request.setBody(body);
+        request.setType(NotificationType.EVENT);
+        request.setPriority(NotificationPriority.NORMAL);
+        request.setChannel(NotificationChannel.BOTH);
+        request.setTargetType(NotificationTargetType.INTERNAL_ROUTE);
+        request.setTargetValue(eventOwnerRoute(event));
+        request.setBroadcastToAll(false);
+        request.setRecipientUserIds(List.of(event.getCreatedByUser().getId()));
+
+        notificationService.createAndSend(request);
+    }
+
+    private String eventOwnerRoute(Event event) {
+        if (event == null || event.getId() == null || event.getCreatedByUser() == null) {
+            return "/instructor/events";
+        }
+
+        if (event.getCreatedByUser().getRole() == UserRole.ADMINISTRATOR) {
+            return "/admin/events/" + event.getId();
+        }
+
+        return "/instructor/events/" + event.getId();
+    }
+
+    private EventRegistrationInfoDTO mapRegistrationInfo(EventRegistration registration) {
+        Student student = registration.getStudent();
+        User user = student != null ? student.getUser() : null;
+
+        return EventRegistrationInfoDTO.builder()
+                .registrationId(registration.getId())
+                .studentId(student != null ? student.getId() : null)
+                .userId(user != null ? user.getId() : null)
+                .studentName(user != null ? user.getFullName() : null)
+                .studentEmail(user != null ? user.getEmail() : null)
+                .status(registration.getStatus())
+                .build();
+    }
+
+    private void validateEventOwnerOrAdmin(Event event, User currentUser) {
+        if (currentUser == null) {
+            throw new IllegalArgumentException("Current user is required");
+        }
+
+        if (currentUser.getRole() == UserRole.ADMINISTRATOR) {
+            return;
+        }
+
+        if (event.getCreatedByUser() == null
+                || !Objects.equals(event.getCreatedByUser().getId(), currentUser.getId())) {
+            throw new IllegalArgumentException("You are not allowed to manage this event");
+        }
     }
 
     private Institution getInstitutionById(Long institutionId) {
@@ -294,23 +708,41 @@ public class EventServiceImpl implements EventService {
         boolean markedAsOpportunity = Boolean.TRUE.equals(request.getIsOpportunity());
         boolean hasOpportunityDetails = request.getOpportunityDetails() != null;
 
-        if (markedAsOpportunity || hasOpportunityDetails) {
-            event.setIsOpportunity(true);
+        boolean shouldBeOpportunity = markedAsOpportunity || hasOpportunityDetails;
 
-            if (hasOpportunityDetails) {
-                Opportunity opportunity = eventMapper.toOpportunityEntity(
-                        request.getOpportunityDetails(),
-                        event
-                );
+        event.setIsOpportunity(shouldBeOpportunity);
 
-                event.setOpportunity(opportunity);
+        if (!shouldBeOpportunity) {
+            Opportunity oldOpportunity = event.getOpportunity();
+            if (oldOpportunity != null) {
+                oldOpportunity.setEvent(null);
             }
 
+            event.setOpportunity(null);
             return;
         }
 
-        event.setIsOpportunity(false);
-        event.setOpportunity(null);
+        if (!hasOpportunityDetails) {
+            return;
+        }
+
+        Opportunity opportunity = event.getOpportunity();
+
+        if (opportunity == null) {
+            opportunity = new Opportunity();
+            opportunity.setEvent(event);
+        }
+
+        opportunity.setCompanyName(request.getOpportunityDetails().getCompanyName());
+        opportunity.setRoleTitle(request.getOpportunityDetails().getRoleTitle());
+        opportunity.setField(request.getOpportunityDetails().getField());
+        opportunity.setIsPaid(Boolean.TRUE.equals(request.getOpportunityDetails().getIsPaid()));
+        opportunity.setWorkMode(request.getOpportunityDetails().getWorkMode());
+        opportunity.setApplicationDeadline(request.getOpportunityDetails().getApplicationDeadline());
+        opportunity.setDurationWeeks(request.getOpportunityDetails().getDurationWeeks());
+        opportunity.setApplicationUrl(request.getOpportunityDetails().getApplicationUrl());
+
+        event.setOpportunity(opportunity);
     }
 
     private EventResponseDTO buildEventResponse(Event event, Long studentId) {
@@ -529,6 +961,73 @@ public class EventServiceImpl implements EventService {
         return comparator;
     }
 
+    private String safeTitle(Event event) {
+        if (event == null || event.getTitle() == null || event.getTitle().isBlank()) {
+            return "Event";
+        }
+
+        return event.getTitle();
+    }
+
+    private String studentName(Student student) {
+        if (student == null || student.getUser() == null) {
+            return "A student";
+        }
+
+        if (student.getUser().getFullName() != null && !student.getUser().getFullName().isBlank()) {
+            return student.getUser().getFullName();
+        }
+
+        return "A student";
+    }
+    @Override
+    public void notifyEventRegistrants(
+            Long eventId,
+            EventRegistrantsNotificationRequestDTO request,
+            String currentUserEmail
+    ) {
+        Event event = getEventByIdOrThrow(eventId);
+        User currentUser = getUserByEmail(currentUserEmail);
+
+        validateEventOwnerOrAdmin(event, currentUser);
+
+        String message = request.getMessage() == null
+                ? ""
+                : request.getMessage().trim();
+
+        if (message.isBlank()) {
+            throw new IllegalArgumentException("Notification message must not be blank");
+        }
+
+        if (message.length() < 3) {
+            throw new IllegalArgumentException("Notification message is too short");
+        }
+
+        if (message.length() > 500) {
+            throw new IllegalArgumentException("Notification message is too long");
+        }
+
+        String title = isOpportunityEvent(event)
+                ? "Opportunity update"
+                : "Event update";
+
+        String route = isOpportunityEvent(event)
+                ? "/student/opportunities/" + event.getId()
+                : "/student/events/" + event.getId();
+
+        notifyRegisteredStudents(
+                event,
+                title + ": " + safeTitle(event),
+                message,
+                route
+        );
+
+        log.info(
+                "Manual notification sent to registered students for event id={} by user={}",
+                eventId,
+                currentUser.getId()
+        );
+    }
     private boolean containsIgnoreCase(String value, String query) {
         return value != null
                 && query != null

@@ -3,23 +3,38 @@ package com.studentbag.backend.events.repository;
 import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
 import com.studentbag.backend.events.entity.EventRegistration;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface EventRegistrationRepository extends JpaRepository<EventRegistration, Long> {
 
-    // FR-9.4: Check if a student is already registered
     Optional<EventRegistration> findByEventIdAndStudentId(Long eventId, Long studentId);
 
-    // FR-9.8: Track status (Saved, Applied, etc.) for a specific student
     List<EventRegistration> findAllByStudentId(Long studentId);
 
-    // FR-9.4: Count active registrations to enforce capacity limits
-    long countByEventIdAndStatusIn(Long eventId, List<RegistrationStatus> activeStatuses);
-    void deleteByEventId(Long eventId);
-    // Find registrations for students who need Smart Schedule notifications (FR-9.5)
+    List<EventRegistration> findAllByEventId(Long eventId);
+
     List<EventRegistration> findAllByEventIdAndStatus(Long eventId, RegistrationStatus status);
+
+    long countByEventIdAndStatusIn(Long eventId, List<RegistrationStatus> activeStatuses);
+    @Query("""
+    SELECT er
+    FROM EventRegistration er
+    JOIN FETCH er.event e
+    LEFT JOIN FETCH e.opportunity o
+    WHERE er.student.id = :studentId
+      AND er.status <> com.studentbag.backend.domain.enums.courses.RegistrationStatus.CANCELLED
+      AND e.startDateTime >= :now
+    ORDER BY e.startDateTime ASC
+""")
+    List<EventRegistration> findUpcomingRegisteredEventsForAi(
+            Long studentId,
+            LocalDateTime now
+    );
+    void deleteByEventId(Long eventId);
 }

@@ -9,6 +9,9 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Entity
 @Table(name = "notes")
 @Getter
@@ -57,6 +60,9 @@ public class Note extends BaseEntity {
 
     @Column(length = 30)
     private String color;
+
+    @OneToMany(mappedBy = "note", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<NoteAttachment> attachments = new ArrayList<>();
 
     public void markImportant() {
         this.isImportant = true;

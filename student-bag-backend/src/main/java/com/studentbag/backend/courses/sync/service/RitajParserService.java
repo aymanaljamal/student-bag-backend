@@ -5,12 +5,14 @@ import com.studentbag.backend.courses.sync.dto.RitajCourseDto;
 import java.util.List;
 
 public interface RitajParserService {
-
     /**
-     * يقوم بتحليل مساقات ريتاج من ملفين (عربي وإنجليزي) لدمج البيانات والأسماء
-     * @param arContent محتوى ملف Course_ar.txt
-     * @param enContent محتوى ملف Course_en.txt
-     * @return قائمة بالمساقات المجهزة للادخال في قاعدة البيانات
+     * يحلل محتوى JSON المدمج (courses_v5.json) ويُنتج قائمة من RitajCourseDto.
+     *
+     * @param jsonContent محتوى الملف نصاً
      */
+    List<RitajCourseDto> parseJson(String jsonContent);
+
+    /** للتوافق مع الكود القديم - مهمل */
+    @Deprecated
     List<RitajCourseDto> parseCourses(String arContent, String enContent);
 }
