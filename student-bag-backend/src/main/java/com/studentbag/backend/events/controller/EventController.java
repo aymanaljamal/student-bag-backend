@@ -1,13 +1,13 @@
 package com.studentbag.backend.events.controller;
 
+import com.studentbag.backend.events.dto.request.EventRegistrantsNotificationRequestDTO;
 import com.studentbag.backend.events.dto.request.EventRegistrationRequestDTO;
 import com.studentbag.backend.events.dto.request.EventRequestDTO;
 import com.studentbag.backend.events.dto.request.EventSearchRequestDTO;
+import com.studentbag.backend.events.dto.response.EventRegistrationInfoDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;
 import com.studentbag.backend.events.dto.response.OpportunityResponseDTO;
 import com.studentbag.backend.events.service.EventService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -67,9 +67,23 @@ public class EventController {
     @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
     @PatchMapping("/{eventId}/finish")
     public ResponseEntity<EventResponseDTO> finishEvent(
-            @PathVariable Long eventId
+            @PathVariable Long eventId,
+            Authentication authentication
     ) {
-        return ResponseEntity.ok(eventService.finishEvent(eventId));
+        return ResponseEntity.ok(
+                eventService.finishEvent(eventId, authentication.getName())
+        );
+    }
+
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
+    @PatchMapping("/{eventId}/cancel")
+    public ResponseEntity<EventResponseDTO> cancelEvent(
+            @PathVariable Long eventId,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(
+                eventService.cancelEvent(eventId, authentication.getName())
+        );
     }
 
     @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
@@ -140,6 +154,42 @@ public class EventController {
         return ResponseEntity.noContent().build();
     }
 
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
+    @GetMapping("/{eventId}/registrations")
+    public ResponseEntity<List<EventRegistrationInfoDTO>> getEventRegistrations(
+            @PathVariable Long eventId,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(
+                eventService.getEventRegistrations(eventId, authentication.getName())
+        );
+    }
+
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
+    @GetMapping("/{eventId}/registrations/count")
+    public ResponseEntity<Long> getEventRegistrationCount(
+            @PathVariable Long eventId,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(
+                eventService.getEventRegistrationCount(eventId, authentication.getName())
+        );
+    }
+    @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
+    @PostMapping("/{eventId}/registrations/notify")
+    public ResponseEntity<Void> notifyEventRegistrants(
+            @PathVariable Long eventId,
+            @Valid @RequestBody EventRegistrantsNotificationRequestDTO request,
+            Authentication authentication
+    ) {
+        eventService.notifyEventRegistrants(
+                eventId,
+                request,
+                authentication.getName()
+        );
+
+        return ResponseEntity.accepted().build();
+    }
     @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
     @PostMapping("/sync")
     public ResponseEntity<Void> syncEvents(

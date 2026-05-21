@@ -1,6 +1,7 @@
 package com.studentbag.backend.courses.sync.dto;
 
 import lombok.Data;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,10 +15,8 @@ public class RitajCourseDto {
     private String academicLevel;
     private Integer creditHours;
 
-    // --- أضف هذه الحقول للربط الدقيق ---
     private String facultyExternalId;
     private String departmentExternalId;
-    // ----------------------------------
 
     private String facultyNameArabic;
     private String facultyNameEnglish;

@@ -54,4 +54,7 @@ public interface PersonalResourceItemRepository extends JpaRepository<PersonalRe
             Long studentId,
             Long linkedTaskId
     );
+    List<PersonalResourceItem> findTop10ByStudentIdAndIsDeletedFalseAndIsArchivedFalseOrderByUpdatedAtDesc(
+            Long studentId
+    );
 }

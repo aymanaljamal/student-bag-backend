@@ -53,6 +53,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class GradeCalculationServiceImpl implements GradeCalculationService {
 
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
+    private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
+    private static final BigDecimal DEFAULT_GPA_SCALE = new BigDecimal("4.00");
+
     private final GradeCalculationRepository calculationRepository;
     private final GradeCourseItemRepository itemRepository;
     private final GradeCalculationMapper mapper;
@@ -66,11 +70,14 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     @Override
     @Transactional
     public GradeCalculationResponse createManual(Long studentId, CreateGradeCalculationRequest request) {
+        validateCreateRequest(request);
+
         Student student = findStudent(studentId);
 
         GradeCalculation calculation = buildBaseCalculation(student, request, null);
         applyRequestedItems(calculation, request.getItems(), true);
 
+        normalizeOrderIndexes(calculation);
         calculatorService.recalculate(calculation);
         calculationRepository.save(calculation);
 
@@ -80,6 +87,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     @Override
     @Transactional
     public GradeCalculationResponse createFromActiveSchedule(Long studentId, CreateGradeCalculationRequest request) {
+        validateCreateRequest(request);
+
         Student student = findStudent(studentId);
 
         StudentSchedule activeSchedule = scheduleRepository
@@ -95,6 +104,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
             calculation.setSourceType(GradeCalculationSource.MIXED);
         }
 
+        normalizeOrderIndexes(calculation);
         calculatorService.recalculate(calculation);
         calculationRepository.save(calculation);
 
@@ -120,8 +130,15 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
     @Override
     @Transactional
-    public GradeCalculationResponse updateCalculation(Long calculationId, Long studentId, UpdateGradeCalculationRequest request) {
+    public GradeCalculationResponse updateCalculation(
+            Long calculationId,
+            Long studentId,
+            UpdateGradeCalculationRequest request
+    ) {
+        validateUpdateRequest(request);
+
         GradeCalculation calculation = findCalculation(calculationId, studentId);
+        ensureCalculationIsEditable(calculation);
 
         calculation.setTitle(request.getTitle() != null ? request.getTitle() : calculation.getTitle());
         calculation.setDescription(request.getDescription() != null ? request.getDescription() : calculation.getDescription());
@@ -157,6 +174,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
             applyRequestedItems(calculation, request.getItems(), true);
         }
 
+        normalizeOrderIndexes(calculation);
         calculatorService.recalculate(calculation);
         calculationRepository.save(calculation);
 
@@ -167,14 +185,17 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     @Transactional
     public GradeCalculationResponse addItem(Long calculationId, Long studentId, GradeCourseItemRequest request) {
         GradeCalculation calculation = findCalculation(calculationId, studentId);
-
-        if (Boolean.TRUE.equals(calculation.getIsLocked())) {
-            throw new IllegalStateException("This grade calculation is locked");
-        }
+        ensureCalculationIsEditable(calculation);
 
         GradeCourseItem item = buildItemFromRequest(calculation, request, true);
+
+        if (isDuplicateCourseItem(calculation, item)) {
+            throw new IllegalStateException("This course already exists in this grade calculation");
+        }
+
         calculation.addItem(item);
 
+        normalizeOrderIndexes(calculation);
         calculatorService.recalculate(calculation);
         calculationRepository.save(calculation);
 
@@ -185,12 +206,14 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     @Transactional
     public GradeCalculationResponse deleteItem(Long calculationId, Long studentId, Long itemId) {
         GradeCalculation calculation = findCalculation(calculationId, studentId);
+        ensureCalculationIsEditable(calculation);
 
         GradeCourseItem item = itemRepository.findByIdAndCalculationId(itemId, calculationId)
                 .orElseThrow(() -> new EntityNotFoundException("Grade item not found"));
 
         calculation.removeItem(item);
 
+        normalizeOrderIndexes(calculation);
         calculatorService.recalculate(calculation);
         calculationRepository.save(calculation);
 
@@ -202,6 +225,13 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     public GradeCalculationResponse recalculate(Long calculationId, Long studentId) {
         GradeCalculation calculation = findCalculation(calculationId, studentId);
 
+        /*
+         * ملاحظة:
+         * لا نمنع recalculate حتى لو الحساب locked.
+         * لأن إعادة الحساب لا تعتبر تعديل يدوي من الطالب،
+         * بل تحديث للنتائج بناءً على البيانات الموجودة.
+         */
+        normalizeOrderIndexes(calculation);
         calculatorService.recalculate(calculation);
         calculationRepository.save(calculation);
 
@@ -212,6 +242,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     @Transactional
     public void deleteCalculation(Long calculationId, Long studentId) {
         GradeCalculation calculation = findCalculation(calculationId, studentId);
+        ensureCalculationIsEditable(calculation);
+
         calculationRepository.delete(calculation);
     }
 
@@ -226,6 +258,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     @Override
     @Transactional(readOnly = true)
     public GradeWhatIfResponse analyzeWhatIf(Long calculationId, Long studentId, GradeWhatIfRequest request) {
+        validateWhatIfRequest(request);
+
         GradeCalculation calculation = findCalculation(calculationId, studentId);
         calculatorService.recalculate(calculation);
 
@@ -285,7 +319,9 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
         for (CourseSection section : uniqueSectionsByCourseId.values()) {
             Course course = section.getCourse();
-            if (course == null) continue;
+            if (course == null) {
+                continue;
+            }
 
             GradeCourseItem item = GradeCourseItem.builder()
                     .calculation(calculation)
@@ -302,7 +338,9 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                     .isRepeatedCourse(false)
                     .build();
 
-            calculation.addItem(item);
+            if (!isDuplicateCourseItem(calculation, item)) {
+                calculation.addItem(item);
+            }
         }
     }
 
@@ -323,6 +361,11 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
             }
 
             GradeCourseItem item = buildItemFromRequest(calculation, request, manualEntries);
+
+            if (isDuplicateCourseItem(calculation, item)) {
+                continue;
+            }
+
             calculation.addItem(item);
         }
     }
@@ -332,6 +375,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
             GradeCourseItemRequest request,
             boolean manualEntries
     ) {
+        validateCourseItemRequest(request);
+
         CourseSection section = null;
         Course course = null;
 
@@ -366,7 +411,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
             }
         }
 
-        if ((courseName == null || courseName.isBlank()) && Boolean.TRUE.equals(calculation.getAutoGenerateSubjectNames())) {
+        if ((courseName == null || courseName.isBlank())
+                && Boolean.TRUE.equals(calculation.getAutoGenerateSubjectNames())) {
             int idx = request.getOrderIndex() != null ? request.getOrderIndex() : calculation.getItems().size() + 1;
             courseName = "Course " + idx;
         }
@@ -376,7 +422,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         }
 
         if (creditHours == null) {
-            creditHours = BigDecimal.ZERO;
+            creditHours = ZERO;
         }
 
         return GradeCourseItem.builder()
@@ -419,9 +465,9 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
         BigDecimal percentage = nz(calculation.getCalculatedPercentage());
         BigDecimal gpa = nz(calculation.getCalculatedGpa());
-        BigDecimal gpaScale = nz(calculation.getGpaScaleMax()).compareTo(BigDecimal.ZERO) > 0
+        BigDecimal gpaScale = nz(calculation.getGpaScaleMax()).compareTo(ZERO) > 0
                 ? calculation.getGpaScaleMax()
-                : new BigDecimal("4.00");
+                : DEFAULT_GPA_SCALE;
 
         String overallLevel;
         String summary;
@@ -560,17 +606,19 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     private BigDecimal impactScore(GradeCourseItem item) {
         BigDecimal credits = nz(item.getCreditHoursSnapshot());
         BigDecimal percentage = nz(item.getNormalizedPercentage());
-        BigDecimal weakness = new BigDecimal("100").subtract(percentage);
+        BigDecimal weakness = ONE_HUNDRED.subtract(percentage);
 
-        if (weakness.compareTo(BigDecimal.ZERO) < 0) {
-            weakness = BigDecimal.ZERO;
+        if (weakness.compareTo(ZERO) < 0) {
+            weakness = ZERO;
         }
 
         return credits.multiply(weakness).setScale(4, RoundingMode.HALF_UP);
     }
 
     private GradeWhatIfResponse analyzeSemesterWhatIf(GradeCalculation calculation, GradeWhatIfRequest request) {
-        WhatIfTargetType targetType = request.getTargetType() != null ? request.getTargetType() : WhatIfTargetType.PERCENTAGE;
+        WhatIfTargetType targetType = request.getTargetType() != null
+                ? request.getTargetType()
+                : WhatIfTargetType.PERCENTAGE;
 
         BigDecimal totalCredits = sumCredits(calculation.getItems());
         BigDecimal gradedCredits = sumCredits(
@@ -585,7 +633,25 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 ? nz(calculation.getCalculatedGpa())
                 : nz(calculation.getCalculatedPercentage());
 
-        if (remainingCredits.compareTo(BigDecimal.ZERO) <= 0) {
+        if (totalCredits.compareTo(ZERO) <= 0) {
+            return GradeWhatIfResponse.builder()
+                    .possible(false)
+                    .scope("SEMESTER")
+                    .targetType(targetType.name())
+                    .targetValue(targetValue)
+                    .currentValue(currentValue)
+                    .gradedCredits(gradedCredits)
+                    .remainingCredits(remainingCredits)
+                    .totalCredits(totalCredits)
+                    .maxPossibleValue(currentValue)
+                    .message(bi(
+                            "لا توجد ساعات كافية لإجراء تحليل ماذا لو.",
+                            "There are not enough credits to run a What-If analysis."
+                    ))
+                    .build();
+        }
+
+        if (remainingCredits.compareTo(ZERO) <= 0) {
             boolean possible = currentValue.compareTo(targetValue) >= 0;
             return GradeWhatIfResponse.builder()
                     .possible(possible)
@@ -613,9 +679,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 ? weightedCurrentGpaPoints(calculation)
                 : weightedCurrentPercentagePoints(calculation);
 
-        BigDecimal scaleMax = targetType == WhatIfTargetType.GPA
-                ? nz(calculation.getGpaScaleMax())
-                : new BigDecimal("100");
+        BigDecimal scaleMax = resolveScaleMax(calculation, targetType);
 
         BigDecimal requiredAverageOnRemaining = targetValue.multiply(totalCredits)
                 .subtract(currentWeighted)
@@ -624,7 +688,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         BigDecimal maxPossible = currentWeighted.add(remainingCredits.multiply(scaleMax))
                 .divide(totalCredits, 8, RoundingMode.HALF_UP);
 
-        boolean possible = requiredAverageOnRemaining.compareTo(BigDecimal.ZERO) >= 0
+        boolean possible = requiredAverageOnRemaining.compareTo(ZERO) >= 0
                 && requiredAverageOnRemaining.compareTo(scaleMax) <= 0;
 
         List<WhatIfRequiredCourseDTO> perCourse = calculation.getItems().stream()
@@ -684,7 +748,9 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     }
 
     private GradeWhatIfResponse analyzeCumulativeWhatIf(GradeCalculation calculation, GradeWhatIfRequest request) {
-        WhatIfTargetType targetType = request.getTargetType() != null ? request.getTargetType() : WhatIfTargetType.PERCENTAGE;
+        WhatIfTargetType targetType = request.getTargetType() != null
+                ? request.getTargetType()
+                : WhatIfTargetType.PERCENTAGE;
 
         BigDecimal semesterCredits = sumCredits(calculation.getItems());
         BigDecimal gradedCredits = sumCredits(
@@ -697,8 +763,9 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         BigDecimal targetValue = nz(request.getTargetValue());
         BigDecimal currentCumulative = nz(request.getCurrentCumulativeValue());
         BigDecimal completedCredits = nz(request.getCompletedCredits());
+        BigDecimal totalCumulativeCredits = completedCredits.add(semesterCredits);
 
-        if (semesterCredits.compareTo(BigDecimal.ZERO) <= 0) {
+        if (semesterCredits.compareTo(ZERO) <= 0) {
             return GradeWhatIfResponse.builder()
                     .possible(false)
                     .scope("CUMULATIVE")
@@ -716,11 +783,31 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                     .build();
         }
 
-        BigDecimal scaleMax = targetType == WhatIfTargetType.GPA
-                ? nz(calculation.getGpaScaleMax())
-                : new BigDecimal("100");
+        if (completedCredits.compareTo(ZERO) < 0) {
+            throw new IllegalArgumentException("Completed credits cannot be negative");
+        }
 
-        BigDecimal requiredSemesterValue = targetValue.multiply(completedCredits.add(semesterCredits))
+        if (totalCumulativeCredits.compareTo(ZERO) <= 0) {
+            return GradeWhatIfResponse.builder()
+                    .possible(false)
+                    .scope("CUMULATIVE")
+                    .targetType(targetType.name())
+                    .targetValue(targetValue)
+                    .currentValue(currentCumulative)
+                    .completedCredits(completedCredits)
+                    .gradedCredits(gradedCredits)
+                    .remainingCredits(remainingCredits)
+                    .totalCredits(semesterCredits)
+                    .message(bi(
+                            "لا يمكن إجراء تحليل تراكمي بدون ساعات مكتملة أو ساعات فصلية.",
+                            "A cumulative analysis cannot be performed without completed or semester credits."
+                    ))
+                    .build();
+        }
+
+        BigDecimal scaleMax = resolveScaleMax(calculation, targetType);
+
+        BigDecimal requiredSemesterValue = targetValue.multiply(totalCumulativeCredits)
                 .subtract(currentCumulative.multiply(completedCredits))
                 .divide(semesterCredits, 8, RoundingMode.HALF_UP);
 
@@ -728,13 +815,17 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 ? weightedCurrentGpaPoints(calculation)
                 : weightedCurrentPercentagePoints(calculation);
 
+        BigDecimal currentSemesterValue = semesterCredits.compareTo(ZERO) > 0
+                ? currentSemesterWeighted.divide(semesterCredits, 8, RoundingMode.HALF_UP)
+                : ZERO;
+
         BigDecimal requiredAverageOnRemaining;
-        if (remainingCredits.compareTo(BigDecimal.ZERO) > 0) {
+        if (remainingCredits.compareTo(ZERO) > 0) {
             requiredAverageOnRemaining = requiredSemesterValue.multiply(semesterCredits)
                     .subtract(currentSemesterWeighted)
                     .divide(remainingCredits, 8, RoundingMode.HALF_UP);
         } else {
-            requiredAverageOnRemaining = BigDecimal.ZERO;
+            requiredAverageOnRemaining = ZERO;
         }
 
         BigDecimal maxPossibleSemester = currentSemesterWeighted.add(remainingCredits.multiply(scaleMax))
@@ -742,12 +833,22 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
         BigDecimal maxPossibleCumulative = currentCumulative.multiply(completedCredits)
                 .add(maxPossibleSemester.multiply(semesterCredits))
-                .divide(completedCredits.add(semesterCredits), 8, RoundingMode.HALF_UP);
+                .divide(totalCumulativeCredits, 8, RoundingMode.HALF_UP);
 
-        boolean possible = requiredSemesterValue.compareTo(BigDecimal.ZERO) >= 0
-                && requiredSemesterValue.compareTo(scaleMax) <= 0
-                && (remainingCredits.compareTo(BigDecimal.ZERO) <= 0
-                || requiredAverageOnRemaining.compareTo(scaleMax) <= 0);
+        BigDecimal projectedCurrentCumulative = currentCumulative.multiply(completedCredits)
+                .add(currentSemesterValue.multiply(semesterCredits))
+                .divide(totalCumulativeCredits, 8, RoundingMode.HALF_UP);
+
+        boolean semesterTargetInScale = requiredSemesterValue.compareTo(ZERO) >= 0
+                && requiredSemesterValue.compareTo(scaleMax) <= 0;
+
+        boolean remainingTargetInScale = remainingCredits.compareTo(ZERO) <= 0
+                || (requiredAverageOnRemaining.compareTo(ZERO) >= 0
+                && requiredAverageOnRemaining.compareTo(scaleMax) <= 0);
+
+        boolean possible = semesterTargetInScale
+                && remainingTargetInScale
+                && maxPossibleCumulative.compareTo(targetValue) >= 0;
 
         List<WhatIfRequiredCourseDTO> perCourse = calculation.getItems().stream()
                 .filter(this::isRemainingItem)
@@ -764,6 +865,18 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 "هذا التحليل يفترض أن الساعات المكتملة السابقة ثابتة، وأن التحسين المطلوب كله سيأتي من هذا الفصل.",
                 "This analysis assumes your previously completed credits are fixed, and the required improvement must come from this semester."
         ));
+
+        notes.add(bi(
+                "التراكمي المتوقع حسب العلامات الحالية تقريبًا هو " + fmt(projectedCurrentCumulative) + ".",
+                "The projected cumulative result based on current marks is about " + fmt(projectedCurrentCumulative) + "."
+        ));
+
+        if (remainingCredits.compareTo(ZERO) <= 0) {
+            notes.add(bi(
+                    "لا توجد مواد متبقية، لذلك تم حساب النتيجة بناءً على العلامات المدخلة حاليًا فقط.",
+                    "There are no remaining courses, so the result is based only on the currently entered marks."
+            ));
+        }
 
         if (possible) {
             notes.add(bi(
@@ -808,42 +921,54 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     }
 
     private boolean isRemainingItem(GradeCourseItem item) {
-        if (item == null) return false;
+        if (item == null) {
+            return false;
+        }
+
+        if (!Boolean.TRUE.equals(item.getIncludedInCalculation())) {
+            return false;
+        }
+
+        if (item.getCourseStatus() == GradeCourseStatus.WITHDRAWN) {
+            return false;
+        }
 
         boolean noNumericValue = item.getEnteredValue() == null;
         boolean noLetter = item.getLetterGrade() == null || item.getLetterGrade().isBlank();
         boolean noNormalizedResult = item.getNormalizedPercentage() == null && item.getGradePoints() == null;
 
-        return Boolean.TRUE.equals(item.getIncludedInCalculation())
-                && ((noNumericValue && noLetter) || noNormalizedResult);
+        return (item.getCourseStatus() == GradeCourseStatus.REGISTERED)
+                || ((noNumericValue && noLetter) || noNormalizedResult);
     }
 
     private BigDecimal weightedCurrentPercentagePoints(GradeCalculation calculation) {
         return calculation.getItems().stream()
                 .filter(Objects::nonNull)
+                .filter(item -> Boolean.TRUE.equals(item.getIncludedInCalculation()))
                 .filter(item -> !isRemainingItem(item))
                 .map(item -> nz(item.getNormalizedPercentage()).multiply(nz(item.getCreditHoursSnapshot())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .reduce(ZERO, BigDecimal::add);
     }
 
     private BigDecimal weightedCurrentGpaPoints(GradeCalculation calculation) {
         return calculation.getItems().stream()
                 .filter(Objects::nonNull)
+                .filter(item -> Boolean.TRUE.equals(item.getIncludedInCalculation()))
                 .filter(item -> !isRemainingItem(item))
                 .map(item -> nz(item.getGradePoints()).multiply(nz(item.getCreditHoursSnapshot())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .reduce(ZERO, BigDecimal::add);
     }
 
     private BigDecimal sumCredits(List<GradeCourseItem> items) {
         if (items == null || items.isEmpty()) {
-            return BigDecimal.ZERO;
+            return ZERO;
         }
 
         return items.stream()
                 .filter(Objects::nonNull)
                 .filter(item -> Boolean.TRUE.equals(item.getIncludedInCalculation()))
                 .map(item -> nz(item.getCreditHoursSnapshot()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+                .reduce(ZERO, BigDecimal::add);
     }
 
     private GradeCalculation findCalculation(Long calculationId, Long studentId) {
@@ -854,6 +979,175 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     private Student findStudent(Long studentId) {
         return studentRepository.findById(studentId)
                 .orElseThrow(() -> new EntityNotFoundException("Student not found"));
+    }
+
+    private void ensureCalculationIsEditable(GradeCalculation calculation) {
+        if (Boolean.TRUE.equals(calculation.getIsLocked())) {
+            throw new IllegalStateException("This grade calculation is locked");
+        }
+    }
+
+    private void validateCreateRequest(CreateGradeCalculationRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Grade calculation request is required");
+        }
+
+        validateScaleValues(request.getGpaScaleMax(), request.getMarkScaleMax());
+
+        if (request.getItems() != null) {
+            request.getItems().forEach(this::validateCourseItemRequest);
+        }
+    }
+
+    private void validateUpdateRequest(UpdateGradeCalculationRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Grade calculation update request is required");
+        }
+
+        validateScaleValues(request.getGpaScaleMax(), request.getMarkScaleMax());
+
+        if (request.getItems() != null) {
+            request.getItems().forEach(this::validateCourseItemRequest);
+        }
+    }
+
+    private void validateWhatIfRequest(GradeWhatIfRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("What-if request is required");
+        }
+
+        if (request.getTargetValue() == null) {
+            throw new IllegalArgumentException("Target value is required");
+        }
+
+        if (request.getTargetValue().compareTo(ZERO) < 0) {
+            throw new IllegalArgumentException("Target value cannot be negative");
+        }
+
+        if (request.getCurrentCumulativeValue() != null
+                && request.getCurrentCumulativeValue().compareTo(ZERO) < 0) {
+            throw new IllegalArgumentException("Current cumulative value cannot be negative");
+        }
+
+        if (request.getCompletedCredits() != null
+                && request.getCompletedCredits().compareTo(ZERO) < 0) {
+            throw new IllegalArgumentException("Completed credits cannot be negative");
+        }
+    }
+
+    private void validateScaleValues(BigDecimal gpaScaleMax, BigDecimal markScaleMax) {
+        if (gpaScaleMax != null && gpaScaleMax.compareTo(ZERO) <= 0) {
+            throw new IllegalArgumentException("GPA scale max must be greater than zero");
+        }
+
+        if (markScaleMax != null && markScaleMax.compareTo(ZERO) <= 0) {
+            throw new IllegalArgumentException("Mark scale max must be greater than zero");
+        }
+    }
+
+    private void validateCourseItemRequest(GradeCourseItemRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Course item request is required");
+        }
+
+        if (request.getCreditHours() != null && request.getCreditHours().compareTo(ZERO) < 0) {
+            throw new IllegalArgumentException("Credit hours cannot be negative");
+        }
+
+        if (request.getEnteredValue() != null && request.getEnteredValue().compareTo(ZERO) < 0) {
+            throw new IllegalArgumentException("Entered value cannot be negative");
+        }
+
+        if (request.getEnteredOutOf() != null && request.getEnteredOutOf().compareTo(ZERO) <= 0) {
+            throw new IllegalArgumentException("Entered out-of value must be greater than zero");
+        }
+
+        if (request.getEnteredValue() != null
+                && request.getEnteredOutOf() != null
+                && request.getEnteredValue().compareTo(request.getEnteredOutOf()) > 0) {
+            throw new IllegalArgumentException("Entered value cannot be greater than entered out-of value");
+        }
+    }
+
+    private void normalizeOrderIndexes(GradeCalculation calculation) {
+        if (calculation == null || calculation.getItems() == null || calculation.getItems().isEmpty()) {
+            return;
+        }
+
+        int index = 1;
+
+        List<GradeCourseItem> sortedItems = calculation.getItems()
+                .stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(
+                        GradeCourseItem::getOrderIndex,
+                        Comparator.nullsLast(Integer::compareTo)
+                ))
+                .toList();
+
+        for (GradeCourseItem item : sortedItems) {
+            item.setOrderIndex(index++);
+        }
+    }
+
+    private boolean isDuplicateCourseItem(GradeCalculation calculation, GradeCourseItem candidate) {
+        if (calculation == null || calculation.getItems() == null || candidate == null) {
+            return false;
+        }
+
+        return calculation.getItems()
+                .stream()
+                .filter(Objects::nonNull)
+                .anyMatch(existing -> sameCourseIdentity(existing, candidate));
+    }
+
+    private boolean sameCourseIdentity(GradeCourseItem a, GradeCourseItem b) {
+        if (a == null || b == null) {
+            return false;
+        }
+
+        Long aCourseId = a.getCourse() != null ? a.getCourse().getId() : null;
+        Long bCourseId = b.getCourse() != null ? b.getCourse().getId() : null;
+
+        if (aCourseId != null && bCourseId != null && Objects.equals(aCourseId, bCourseId)) {
+            return true;
+        }
+
+        Long aSectionId = a.getCourseSection() != null ? a.getCourseSection().getId() : null;
+        Long bSectionId = b.getCourseSection() != null ? b.getCourseSection().getId() : null;
+
+        if (aSectionId != null && bSectionId != null && Objects.equals(aSectionId, bSectionId)) {
+            return true;
+        }
+
+        String aCode = normalizeKey(a.getCourseCodeSnapshot());
+        String bCode = normalizeKey(b.getCourseCodeSnapshot());
+
+        if (aCode != null && bCode != null && aCode.equals(bCode)) {
+            return true;
+        }
+
+        String aName = normalizeKey(a.getCourseNameSnapshot());
+        String bName = normalizeKey(b.getCourseNameSnapshot());
+
+        return aName != null && bName != null && aName.equals(bName);
+    }
+
+    private String normalizeKey(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private BigDecimal resolveScaleMax(GradeCalculation calculation, WhatIfTargetType targetType) {
+        if (targetType == WhatIfTargetType.GPA) {
+            BigDecimal scale = nz(calculation.getGpaScaleMax());
+            return scale.compareTo(ZERO) > 0 ? scale : DEFAULT_GPA_SCALE;
+        }
+
+        return ONE_HUNDRED;
     }
 
     private String defaultTitle(GradeCalculationSource sourceType) {
@@ -967,10 +1261,10 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     }
 
     private BigDecimal toBigDecimal(Integer value) {
-        return value == null ? BigDecimal.ZERO : BigDecimal.valueOf(value);
+        return value == null ? ZERO : BigDecimal.valueOf(value);
     }
 
     private BigDecimal nz(BigDecimal value) {
-        return value == null ? BigDecimal.ZERO : value;
+        return value == null ? ZERO : value;
     }
 }

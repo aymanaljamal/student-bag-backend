@@ -1,5 +1,6 @@
 package com.studentbag.backend.schedule.service.impl;
 
+import com.studentbag.backend.courses.entity.Course;
 import com.studentbag.backend.courses.entity.CourseSection;
 import com.studentbag.backend.courses.entity.Term;
 import com.studentbag.backend.courses.repository.CourseSectionRepository;
@@ -26,7 +27,10 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.TemporalAdjusters;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -56,43 +60,16 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
                 .status(ScheduleStatus.DRAFT)
                 .build();
 
-        for (CourseSectionDTO section : request.getOption().getSections()) {
-            if (section.getSessions() == null || section.getSessions().isEmpty()) {
-                continue;
-            }
+        addOptionSessionEntries(request, schedule, student);
 
-            CourseSection courseSection = null;
-            if (section.getSectionId() != null) {
-                courseSection = courseSectionRepository.findById(section.getSectionId()).orElse(null);
-            }
-
-            for (ClassSessionDTO session : section.getSessions()) {
-                LocalDate sessionDate = resolveDateForDay(session.getDay());
-
-                LocalDateTime startDateTime = LocalDateTime.of(sessionDate, session.getStartTime());
-                LocalDateTime endDateTime = LocalDateTime.of(sessionDate, session.getEndTime());
-
-                ScheduleEntry entry = ScheduleEntry.builder()
-                        .student(student)
-                        .sourceType(ScheduleSourceType.COURSE)
-                        .courseSection(courseSection)
-                        .title(buildTitle(section))
-                        .description(buildDescription(section))
-                        .location(buildLocation(session))
-                        .startDateTime(startDateTime)
-                        .endDateTime(endDateTime)
-                        .isAllDay(false)
-                        .isLocked(false)
-                        .build();
-
-                schedule.addEntry(entry);
-            }
-        }
+        addMissingHiddenCourseEntries(request, schedule, student);
 
         StudentSchedule saved = studentScheduleRepository.save(schedule);
 
         return StudentScheduleResponseDTO.builder()
                 .id(saved.getId())
+                .termId(saved.getTerm() != null ? saved.getTerm().getId() : null)
+                .termName(saved.getTerm() != null ? saved.getTerm().getName() : null)
                 .status(saved.getStatus())
                 .build();
     }
@@ -145,6 +122,118 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
                 .toList();
     }
 
+    private void addOptionSessionEntries(
+            SaveScheduleRequestDTO request,
+            StudentSchedule schedule,
+            Student student
+    ) {
+        if (request.getOption().getSections() == null
+                || request.getOption().getSections().isEmpty()) {
+            return;
+        }
+
+        for (CourseSectionDTO section : request.getOption().getSections()) {
+            if (section.getSessions() == null || section.getSessions().isEmpty()) {
+                continue;
+            }
+
+            CourseSection courseSection = null;
+
+            if (section.getSectionId() != null) {
+                courseSection = courseSectionRepository.findById(section.getSectionId())
+                        .orElse(null);
+            }
+
+            for (ClassSessionDTO session : section.getSessions()) {
+                if (session.getDay() == null
+                        || session.getStartTime() == null
+                        || session.getEndTime() == null) {
+                    continue;
+                }
+
+                LocalDate sessionDate = resolveDateForDay(session.getDay());
+
+                LocalDateTime startDateTime = LocalDateTime.of(
+                        sessionDate,
+                        session.getStartTime()
+                );
+
+                LocalDateTime endDateTime = LocalDateTime.of(
+                        sessionDate,
+                        session.getEndTime()
+                );
+
+                if (!endDateTime.isAfter(startDateTime)) {
+                    continue;
+                }
+
+                ScheduleEntry entry = ScheduleEntry.builder()
+                        .student(student)
+                        .sourceType(ScheduleSourceType.COURSE)
+                        .courseSection(courseSection)
+                        .title(buildTitle(section))
+                        .description(buildDescription(section))
+                        .location(buildLocation(session))
+                        .startDateTime(startDateTime)
+                        .endDateTime(endDateTime)
+                        .isAllDay(false)
+                        .isLocked(false)
+                        .build();
+
+                schedule.addEntry(entry);
+            }
+        }
+    }
+
+    private void addMissingHiddenCourseEntries(
+            SaveScheduleRequestDTO request,
+            StudentSchedule schedule,
+            Student student
+    ) {
+        if (request.getSelectedCourseSectionIds() == null
+                || request.getSelectedCourseSectionIds().isEmpty()) {
+            return;
+        }
+
+        Set<Long> existingSectionIds = schedule.getEntries()
+                .stream()
+                .filter(entry -> entry.getSourceType() == ScheduleSourceType.COURSE)
+                .filter(entry -> entry.getCourseSection() != null)
+                .map(entry -> entry.getCourseSection().getId())
+                .collect(Collectors.toSet());
+
+        Set<Long> requestedSectionIds = new HashSet<>(request.getSelectedCourseSectionIds());
+
+        for (Long sectionId : requestedSectionIds) {
+            if (sectionId == null || existingSectionIds.contains(sectionId)) {
+                continue;
+            }
+
+            CourseSection courseSection = courseSectionRepository.findById(sectionId)
+                    .orElseThrow(() -> new RuntimeException(
+                            "CourseSection not found: " + sectionId
+                    ));
+
+            LocalDateTime start = hiddenEntryStartTime();
+
+            ScheduleEntry hiddenEntry = ScheduleEntry.builder()
+                    .student(student)
+                    .sourceType(ScheduleSourceType.COURSE)
+                    .courseSection(courseSection)
+                    .title(buildTitle(courseSection))
+                    .description(buildDescription(courseSection))
+                    .location(null)
+                    .startDateTime(start)
+                    .endDateTime(start.plusMinutes(1))
+                    .isAllDay(true)
+                    .isLocked(false)
+                    .build();
+
+            schedule.addEntry(hiddenEntry);
+            existingSectionIds.add(sectionId);
+        }
+    }
+
     private StudentScheduleViewerResponseDTO mapToViewerResponse(StudentSchedule schedule) {
         return StudentScheduleViewerResponseDTO.builder()
                 .id(schedule.getId())
@@ -155,9 +244,16 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
                     Integer instructorId = null;
                     String instructorName = null;
 
-                    if (entry.getCourseSection() != null && entry.getCourseSection().getInstructor() != null) {
-                        instructorId = entry.getCourseSection().getInstructor().getId().intValue();
-                        instructorName = entry.getCourseSection().getInstructor().getFullNameEnglish();
+                    if (entry.getCourseSection() != null
+                            && entry.getCourseSection().getInstructor() != null) {
+                        instructorId = entry.getCourseSection()
+                                .getInstructor()
+                                .getId()
+                                .intValue();
+
+                        instructorName = entry.getCourseSection()
+                                .getInstructor()
+                                .getFullNameEnglish();
                     }
 
                     return ScheduleViewerEntryResponseDTO.builder()
@@ -192,13 +288,23 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
         return now.with(TemporalAdjusters.nextOrSame(day));
     }
 
+    private LocalDateTime hiddenEntryStartTime() {
+        return LocalDateTime.now()
+                .withHour(0)
+                .withMinute(0)
+                .withSecond(0)
+                .withNano(0);
+    }
+
     private String buildTitle(CourseSectionDTO section) {
         if (section.getCourseCode() != null && !section.getCourseCode().isBlank()) {
             return section.getCourseCode();
         }
+
         if (section.getCourseName() != null && !section.getCourseName().isBlank()) {
             return section.getCourseName();
         }
+
         return "Course";
     }
 
@@ -232,6 +338,56 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
         if (session.getRoom() != null && !session.getRoom().isBlank()) {
             if (!sb.isEmpty()) sb.append(" • ");
             sb.append(session.getRoom());
+        }
+
+        return sb.toString();
+    }
+
+    private String buildTitle(CourseSection section) {
+        if (section.getCourse() == null) {
+            return "Course";
+        }
+
+        Course course = section.getCourse();
+
+        if (course.getCode() != null && !course.getCode().isBlank()) {
+            return course.getCode();
+        }
+
+        if (course.getNameEnglish() != null && !course.getNameEnglish().isBlank()) {
+            return course.getNameEnglish();
+        }
+
+        if (course.getNameArabic() != null && !course.getNameArabic().isBlank()) {
+            return course.getNameArabic();
+        }
+
+        return "Course";
+    }
+
+    private String buildDescription(CourseSection section) {
+        StringBuilder sb = new StringBuilder();
+
+        if (section.getCourse() != null) {
+            Course course = section.getCourse();
+
+            if (course.getNameEnglish() != null && !course.getNameEnglish().isBlank()) {
+                sb.append(course.getNameEnglish());
+            } else if (course.getNameArabic() != null && !course.getNameArabic().isBlank()) {
+                sb.append(course.getNameArabic());
+            }
+        }
+
+        if (section.getSectionNumber() != null && !section.getSectionNumber().isBlank()) {
+            if (!sb.isEmpty()) sb.append(" • ");
+            sb.append("Section ").append(section.getSectionNumber());
+        }
+
+        if (section.getInstructor() != null
+                && section.getInstructor().getFullNameEnglish() != null
+                && !section.getInstructor().getFullNameEnglish().isBlank()) {
+            if (!sb.isEmpty()) sb.append(" • ");
+            sb.append(section.getInstructor().getFullNameEnglish());
         }
 
         return sb.toString();

@@ -1,11 +1,27 @@
 package com.studentbag.backend.resources.service.impl;
 
 import com.studentbag.backend.courses.entity.Course;
+import com.studentbag.backend.courses.entity.Term;
 import com.studentbag.backend.courses.repository.CourseRepository;
+import com.studentbag.backend.courses.repository.TermRepository;
 import com.studentbag.backend.domain.enums.resources.ResourceCategory;
 import com.studentbag.backend.domain.enums.resources.ResourceType;
-import com.studentbag.backend.resources.dto.request.*;
-import com.studentbag.backend.resources.dto.response.*;
+import com.studentbag.backend.resources.dto.request.CopyAdminResourceToPersonalRequest;
+import com.studentbag.backend.resources.dto.request.CopyPersonalResourceItemRequest;
+import com.studentbag.backend.resources.dto.request.CreatePersonalResourceFolderRequest;
+import com.studentbag.backend.resources.dto.request.CreatePersonalResourceItemRequest;
+import com.studentbag.backend.resources.dto.request.GenerateFoldersFromActiveScheduleRequest;
+import com.studentbag.backend.resources.dto.request.MovePersonalResourceItemRequest;
+import com.studentbag.backend.resources.dto.request.UpdatePersonalResourceFolderRequest;
+import com.studentbag.backend.resources.dto.request.UpdatePersonalResourceItemRequest;
+import com.studentbag.backend.resources.dto.response.LinkedNoteSummaryResponse;
+import com.studentbag.backend.resources.dto.response.LinkedTaskSummaryResponse;
+import com.studentbag.backend.resources.dto.response.PersonalLibraryOverviewResponse;
+import com.studentbag.backend.resources.dto.response.PersonalResourceFolderDetailsResponse;
+import com.studentbag.backend.resources.dto.response.PersonalResourceFolderResponse;
+import com.studentbag.backend.resources.dto.response.PersonalResourceItemResponse;
+import com.studentbag.backend.resources.dto.response.ResourceCourseSummaryResponse;
+import com.studentbag.backend.resources.dto.response.ResourceOperationResponse;
 import com.studentbag.backend.resources.entity.AdminResource;
 import com.studentbag.backend.resources.entity.PersonalResourceFolder;
 import com.studentbag.backend.resources.entity.PersonalResourceItem;
@@ -31,19 +47,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Implementation of {@link PersonalResourceLibraryService}.
- *
- * <p>This service manages the student's private resource library:
- * <ul>
- *     <li>Root folder creation</li>
- *     <li>Manual folders and items</li>
- *     <li>Generate folders from active schedule</li>
- *     <li>Copy public resources into personal library</li>
- *     <li>Copy personal items</li>
- *     <li>Archive / delete / move operations</li>
- * </ul>
- */
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -56,23 +59,33 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
     private final UserRepository userRepository;
     private final StudentRepository studentRepository;
     private final CourseRepository courseRepository;
+    private final TermRepository termRepository;
     private final ScheduleManagementService scheduleManagementService;
     private final ResourceIntegrationService resourceIntegrationService;
+
     @Override
     @Transactional
-
     public PersonalLibraryOverviewResponse getLibraryOverview(UUID currentUserId) {
         Student student = getStudentByUserId(currentUserId);
         PersonalResourceFolder root = getOrCreateRootFolderEntity(student);
 
+        Long currentTermId = getCurrentTermId();
+
+        List<ResourceCourseSummaryResponse> activeCourses =
+                resourceIntegrationService.getActiveScheduleCoursesForLibrary(currentUserId, currentTermId);
+
+        // مهم: أنشئ فولدرات للكورسات النشطة تلقائيًا إذا مش موجودة
+        ensureCourseFoldersForActiveCourses(student, root, activeCourses);
+
+        // بعد الإنشاء، اقرأ الفولدرات من جديد
         List<PersonalResourceFolderResponse> topFolders = folderRepository
-                .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(student.getId(), root.getId())
+                .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
+                        student.getId(),
+                        root.getId()
+                )
                 .stream()
                 .map(PersonalResourceFolderMapper::toResponse)
                 .toList();
-
-        List<ResourceCourseSummaryResponse> activeCourses =
-                resourceIntegrationService.getActiveScheduleCoursesForLibrary(currentUserId, 1L);
 
         return PersonalLibraryOverviewResponse.builder()
                 .rootFolder(PersonalResourceFolderMapper.toResponse(root))
@@ -80,13 +93,52 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
                 .activeScheduleCourses(activeCourses)
                 .build();
     }
-
     @Override
     public PersonalResourceFolderResponse getOrCreateRootFolder(UUID currentUserId) {
         Student student = getStudentByUserId(currentUserId);
         return PersonalResourceFolderMapper.toResponse(getOrCreateRootFolderEntity(student));
     }
+    private void ensureCourseFoldersForActiveCourses(
+            Student student,
+            PersonalResourceFolder root,
+            List<ResourceCourseSummaryResponse> activeCourses
+    ) {
+        if (activeCourses == null || activeCourses.isEmpty()) {
+            return;
+        }
 
+        for (ResourceCourseSummaryResponse courseDto : activeCourses) {
+            List<PersonalResourceFolder> existingFolders =
+                    folderRepository.findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
+                            student.getId(),
+                            courseDto.getId()
+                    );
+
+            if (!existingFolders.isEmpty()) {
+                continue;
+            }
+
+            Course course = getCourse(courseDto.getId());
+
+            PersonalResourceFolder folder = PersonalResourceFolder.builder()
+                    .name(course.getNameEnglish() != null && !course.getNameEnglish().isBlank()
+                            ? course.getNameEnglish()
+                            : course.getNameArabic())
+                    .description("System-generated folder from active schedule")
+                    .student(student)
+                    .parentFolder(root)
+                    .course(course)
+                    .isRoot(false)
+                    .isSystemGenerated(true)
+                    .isDeleted(false)
+                    .isArchived(false)
+                    .showLinkedNotes(true)
+                    .showLinkedTasks(true)
+                    .build();
+
+            folderRepository.save(folder);
+        }
+    }
     @Override
     public PersonalResourceFolderResponse createFolder(
             UUID currentUserId,
@@ -152,7 +204,10 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         PersonalResourceFolder root = getOrCreateRootFolderEntity(student);
 
         return folderRepository
-                .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(student.getId(), root.getId())
+                .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
+                        student.getId(),
+                        root.getId()
+                )
                 .stream()
                 .map(PersonalResourceFolderMapper::toResponse)
                 .toList();
@@ -165,7 +220,10 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         getFolderForStudent(parentFolderId, student.getId());
 
         return folderRepository
-                .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(student.getId(), parentFolderId)
+                .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
+                        student.getId(),
+                        parentFolderId
+                )
                 .stream()
                 .map(PersonalResourceFolderMapper::toResponse)
                 .toList();
@@ -177,7 +235,10 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         Student student = getStudentByUserId(currentUserId);
 
         return folderRepository
-                .findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(student.getId(), courseId)
+                .findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
+                        student.getId(),
+                        courseId
+                )
                 .stream()
                 .map(PersonalResourceFolderMapper::toResponse)
                 .toList();
@@ -229,19 +290,28 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         Student student = getStudentByUserId(currentUserId);
         PersonalResourceFolder root = getOrCreateRootFolderEntity(student);
 
-        Long termId = request.getTermId() != null ? request.getTermId() : 1L;
+        Long termId = request != null && request.getTermId() != null
+                ? request.getTermId()
+                : getCurrentTermId();
 
-        List<ActiveScheduleCourseDTO> courses =
-                scheduleManagementService.getActiveScheduleCourses(student.getId(), termId);
+        List<ActiveScheduleCourseDTO> courses;
+
+        try {
+            courses = scheduleManagementService.getActiveScheduleCourses(student.getId(), termId);
+        } catch (Exception e) {
+            return List.of();
+        }
 
         return courses.stream()
                 .map(courseDto -> {
                     List<PersonalResourceFolder> existingFolders =
                             folderRepository.findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
-                                    student.getId(), courseDto.getId()
+                                    student.getId(),
+                                    courseDto.getId()
                             );
 
-                    if (!existingFolders.isEmpty() && !Boolean.TRUE.equals(request.getOverwriteExisting())) {
+                    if (!existingFolders.isEmpty()
+                            && (request == null || !Boolean.TRUE.equals(request.getOverwriteExisting()))) {
                         return PersonalResourceFolderMapper.toResponse(existingFolders.get(0));
                     }
 
@@ -267,7 +337,6 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
                 })
                 .toList();
     }
-
     @Override
     public PersonalResourceItemResponse createItem(
             UUID currentUserId,
@@ -331,7 +400,10 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         getFolderForStudent(folderId, student.getId());
 
         return itemRepository
-                .findByStudentIdAndFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(student.getId(), folderId)
+                .findByStudentIdAndFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(
+                        student.getId(),
+                        folderId
+                )
                 .stream()
                 .map(PersonalResourceItemMapper::toResponse)
                 .toList();
@@ -343,7 +415,10 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         Student student = getStudentByUserId(currentUserId);
 
         return itemRepository
-                .findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(student.getId(), courseId)
+                .findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(
+                        student.getId(),
+                        courseId
+                )
                 .stream()
                 .map(PersonalResourceItemMapper::toResponse)
                 .toList();
@@ -351,11 +426,17 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
 
     @Override
     @Transactional(readOnly = true)
-    public List<PersonalResourceItemResponse> getItemsByCategory(UUID currentUserId, ResourceCategory category) {
+    public List<PersonalResourceItemResponse> getItemsByCategory(
+            UUID currentUserId,
+            ResourceCategory category
+    ) {
         Student student = getStudentByUserId(currentUserId);
 
         return itemRepository
-                .findByStudentIdAndCategoryAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(student.getId(), category)
+                .findByStudentIdAndCategoryAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(
+                        student.getId(),
+                        category
+                )
                 .stream()
                 .map(PersonalResourceItemMapper::toResponse)
                 .toList();
@@ -363,11 +444,17 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
 
     @Override
     @Transactional(readOnly = true)
-    public List<PersonalResourceItemResponse> getItemsByType(UUID currentUserId, ResourceType resourceType) {
+    public List<PersonalResourceItemResponse> getItemsByType(
+            UUID currentUserId,
+            ResourceType resourceType
+    ) {
         Student student = getStudentByUserId(currentUserId);
 
         return itemRepository
-                .findByStudentIdAndResourceTypeAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(student.getId(), resourceType)
+                .findByStudentIdAndResourceTypeAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(
+                        student.getId(),
+                        resourceType
+                )
                 .stream()
                 .map(PersonalResourceItemMapper::toResponse)
                 .toList();
@@ -405,7 +492,10 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         AdminResource source = adminResourceRepository.findById(adminResourceId)
                 .orElseThrow(() -> new IllegalArgumentException("Admin resource not found"));
 
-        PersonalResourceFolder targetFolder = resolveTargetFolder(student, request != null ? request.getTargetFolderId() : null);
+        PersonalResourceFolder targetFolder = resolveTargetFolder(
+                student,
+                request != null ? request.getTargetFolderId() : null
+        );
 
         PersonalResourceItem item = PersonalResourceItem.builder()
                 .title(source.getTitle())
@@ -446,7 +536,11 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
     ) {
         Student student = getStudentByUserId(currentUserId);
         PersonalResourceItem source = getItemForStudent(itemId, student.getId());
-        PersonalResourceFolder targetFolder = resolveTargetFolder(student, request != null ? request.getTargetFolderId() : null);
+
+        PersonalResourceFolder targetFolder = resolveTargetFolder(
+                student,
+                request != null ? request.getTargetFolderId() : null
+        );
 
         PersonalResourceItem copy = PersonalResourceItem.builder()
                 .title(source.getTitle())
@@ -536,9 +630,6 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
                 .orElseThrow(() -> new IllegalArgumentException("Item not found"));
     }
 
-    /**
-     * Returns existing root folder or creates one automatically for the student.
-     */
     private PersonalResourceFolder getOrCreateRootFolderEntity(Student student) {
         return folderRepository.findByStudentIdAndIsRootTrueAndIsDeletedFalse(student.getId())
                 .orElseGet(() -> folderRepository.save(
@@ -562,15 +653,25 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         if (targetFolderId != null) {
             return getFolderForStudent(targetFolderId, student.getId());
         }
+
         return getOrCreateRootFolderEntity(student);
     }
 
-    /**
-     * Validates duplicate folder name at the same parent level.
-     */
+    private Long getCurrentTermId() {
+        return termRepository.findAll()
+                .stream()
+                .filter(term -> Boolean.TRUE.equals(term.getIsCurrent()))
+                .map(Term::getId)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Current term not found"));
+    }
+
     private void validateFolderName(Long studentId, PersonalResourceFolder parentFolder, String name) {
         boolean exists = parentFolder == null
-                ? folderRepository.existsByStudentIdAndParentFolderIsNullAndNameIgnoreCaseAndIsDeletedFalse(studentId, name)
+                ? folderRepository.existsByStudentIdAndParentFolderIsNullAndNameIgnoreCaseAndIsDeletedFalse(
+                studentId,
+                name
+        )
                 : folderRepository.existsByStudentIdAndParentFolderIdAndNameIgnoreCaseAndIsDeletedFalse(
                 studentId,
                 parentFolder.getId(),

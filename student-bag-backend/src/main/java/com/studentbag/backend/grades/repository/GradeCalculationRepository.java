@@ -9,6 +9,6 @@ import java.util.Optional;
 public interface GradeCalculationRepository extends JpaRepository<GradeCalculation, Long> {
 
     List<GradeCalculation> findAllByStudentIdOrderByUpdatedAtDesc(Long studentId);
-
+    Optional<GradeCalculation> findTopByStudentIdOrderByUpdatedAtDesc(Long studentId);
     Optional<GradeCalculation> findByIdAndStudentId(Long id, Long studentId);
 }

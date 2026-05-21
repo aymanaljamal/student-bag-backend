@@ -13,4 +13,5 @@ public interface TaskLabelRepository extends JpaRepository<TaskLabel, Long> {
     Optional<TaskLabel> findByIdAndStudentId(Long id, Long studentId);
 
     boolean existsByStudentIdAndNameIgnoreCase(Long studentId, String name);
+
 }

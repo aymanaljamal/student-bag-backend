@@ -3,18 +3,14 @@ package com.studentbag.backend.courses.sync.service;
 import com.studentbag.backend.courses.sync.dto.RitajFetchedPagesDto;
 
 public interface RitajFetchService {
-
     /**
-     * يقرأ محتوى ملف نصي من الـ static folder داخل المشروع.
-     * @param fileName اسم الملف (مثلاً: Course_en.txt)
-     * @return محتوى الملف كنص
+     * يقرأ ملف JSON المدمج (courses_v5.json) من مجلد resources/static
+     *
+     * @param baseFileName اسم الملف بدون امتداد، مثل "courses_v5"
      */
-    String fetchText(String fileName);
+    RitajFetchedPagesDto fetchJsonFile(String baseFileName);
 
-    /**
-     * يقرأ نسختي الملف (العربية والإنجليزية) بناءً على اسم أساسي.
-     * @param baseFileName الاسم الأساسي للملف (مثلاً: Course)
-     * @return DTO يحتوي على النصوص من الملفين
-     */
+    /** للتوافق مع الكود القديم - مهمل */
+    @Deprecated
     RitajFetchedPagesDto fetchArabicAndEnglishPages(String baseFileName);
 }

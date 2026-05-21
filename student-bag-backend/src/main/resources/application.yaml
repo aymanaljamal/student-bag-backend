@@ -1,8 +1,11 @@
+server:
+  port: 8080
+
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/student_bag
-    username: postgres
-    password: ayman@123
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:ayman@123}
 
   jpa:
     hibernate:
@@ -18,8 +21,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ayman.aljamal2017@gmail.com
-    password: ihep rqnx jyyl ucnp
+    username: ${MAIL_USERNAME:ayman.aljamal2017@gmail.com}
+    password: ${MAIL_PASSWORD:ihep rqnx jyyl ucnp}
     properties:
       mail:
         smtp:
@@ -27,10 +30,12 @@ spring:
           starttls:
             enable: true
 
-server:
-  port: 8080
-
 app:
   jwt:
-    secret: your_super_secret_key_123456789012345678901234567890
+    secret: ${JWT_SECRET:your_super_secret_key_123456789012345678901234567890}
     expiration: 86400000
+
+openai:
+  api-key: ${OPENAI_API_KEY}
+  model: ${OPENAI_MODEL:gpt-4.1-mini}
+  base-url: https://api.openai.com/v1

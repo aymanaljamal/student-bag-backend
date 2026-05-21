@@ -1,5 +1,7 @@
 package com.studentbag.backend.resources.controller;
 
+import com.studentbag.backend.courses.entity.Term;
+import com.studentbag.backend.courses.repository.TermRepository;
 import com.studentbag.backend.resources.dto.response.LinkedNoteSummaryResponse;
 import com.studentbag.backend.resources.dto.response.LinkedTaskSummaryResponse;
 import com.studentbag.backend.resources.dto.response.PersonalResourceFolderDetailsResponse;
@@ -35,6 +37,7 @@ public class ResourceIntegrationController {
 
     private final ResourceIntegrationService resourceIntegrationService;
     private final UserRepository userRepository;
+    private final TermRepository termRepository;
 
     /**
      * Resolves the current authenticated user UUID from JWT email.
@@ -53,19 +56,37 @@ public class ResourceIntegrationController {
     }
 
     /**
+     * Resolves the current academic term from DB.
+     */
+    private Long getCurrentTermId() {
+        return termRepository.findAll()
+                .stream()
+                .filter(term -> Boolean.TRUE.equals(term.getIsCurrent()))
+                .map(Term::getId)
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Current term not found"));
+    }
+
+    /**
      * Returns active schedule courses for the current student.
      *
-     * <p>Useful for generating folders or selecting a course-linked library context.</p>
+     * <p>If termId is provided, it uses it.
+     * Otherwise, it uses the current term where is_current = true.</p>
      */
     @GetMapping("/active-courses")
     public ResponseEntity<List<ResourceCourseSummaryResponse>> getActiveScheduleCoursesForLibrary(
             @AuthenticationPrincipal UserDetails userDetails,
-            @RequestParam(defaultValue = "1") Long termId
+            @RequestParam(required = false) Long termId
     ) {
         UUID currentUserId = getCurrentUserId(userDetails);
 
+        Long resolvedTermId = termId != null ? termId : getCurrentTermId();
+
         return ResponseEntity.ok(
-                resourceIntegrationService.getActiveScheduleCoursesForLibrary(currentUserId, termId)
+                resourceIntegrationService.getActiveScheduleCoursesForLibrary(
+                        currentUserId,
+                        resolvedTermId
+                )
         );
     }
 

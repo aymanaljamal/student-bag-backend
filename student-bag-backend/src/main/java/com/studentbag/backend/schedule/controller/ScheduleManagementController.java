@@ -1,5 +1,7 @@
 package com.studentbag.backend.schedule.controller;
 
+import com.studentbag.backend.courses.entity.Term;
+import com.studentbag.backend.courses.repository.TermRepository;
 import com.studentbag.backend.schedule.dto.request.UpdateScheduleRequest;
 import com.studentbag.backend.schedule.dto.response.ActiveScheduleCourseDTO;
 import com.studentbag.backend.schedule.dto.response.StudentScheduleViewerResponseDTO;
@@ -29,6 +31,7 @@ public class ScheduleManagementController {
     private final ScheduleViewerService viewerService;
     private final UserRepository userRepository;
     private final StudentRepository studentRepository;
+    private final TermRepository termRepository;
 
     private Long getCurrentStudentId(UserDetails userDetails) {
         String email = userDetails.getUsername();
@@ -42,6 +45,15 @@ public class ScheduleManagementController {
                 .orElseThrow(() -> new RuntimeException("Student not found for user id: " + userId));
 
         return student.getId();
+    }
+
+    private Long getCurrentTermId() {
+        return termRepository.findAll()
+                .stream()
+                .filter(term -> Boolean.TRUE.equals(term.getIsCurrent()))
+                .map(Term::getId)
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Current term not found"));
     }
 
     @GetMapping("/viewer")
@@ -94,6 +106,10 @@ public class ScheduleManagementController {
         );
     }
 
+    /**
+     * Old endpoint:
+     * Uses a termId sent from Flutter.
+     */
     @GetMapping("/term/{termId}/active/courses")
     public ResponseEntity<List<ActiveScheduleCourseDTO>> getActiveScheduleCourses(
             @PathVariable Long termId,
@@ -103,6 +119,22 @@ public class ScheduleManagementController {
 
         return ResponseEntity.ok(
                 managementService.getActiveScheduleCourses(studentId, termId)
+        );
+    }
+
+    /**
+     * New endpoint:
+     * Uses the current term from DB where is_current = true.
+     */
+    @GetMapping("/current/active/courses")
+    public ResponseEntity<List<ActiveScheduleCourseDTO>> getCurrentTermActiveScheduleCourses(
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        Long studentId = getCurrentStudentId(userDetails);
+        Long currentTermId = getCurrentTermId();
+
+        return ResponseEntity.ok(
+                managementService.getActiveScheduleCourses(studentId, currentTermId)
         );
     }
 }

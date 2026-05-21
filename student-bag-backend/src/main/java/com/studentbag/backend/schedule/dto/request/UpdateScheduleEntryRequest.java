@@ -14,6 +14,7 @@ public class UpdateScheduleEntryRequest {
     private String title;
 
     private String description;
+
     private String location;
 
     @NotNull
@@ -23,6 +24,7 @@ public class UpdateScheduleEntryRequest {
     private LocalDateTime endDateTime;
 
     private Boolean isAllDay = false;
+
     private String colorHex;
 
     @NotNull

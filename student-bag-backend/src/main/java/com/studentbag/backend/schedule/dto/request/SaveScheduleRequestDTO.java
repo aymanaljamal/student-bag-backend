@@ -4,6 +4,9 @@ import com.studentbag.backend.schedule.dto.response.ScheduleOptionResponseDTO;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @Data
 public class SaveScheduleRequestDTO {
 
@@ -15,4 +18,10 @@ public class SaveScheduleRequestDTO {
 
     @NotNull(message = "option is required")
     private ScheduleOptionResponseDTO option;
+
+    /**
+     * كل الشعب المختارة من الطالب.
+     * مهم عشان نحفظ كورسات ما إلها وقت/entry كـ hidden all-day entries.
+     */
+    private List<Long> selectedCourseSectionIds = new ArrayList<>();
 }

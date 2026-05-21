@@ -15,7 +15,6 @@ import com.studentbag.backend.notifications.entity.Notification;
 import com.studentbag.backend.notifications.entity.NotificationAttachment;
 import com.studentbag.backend.notifications.entity.StudentNotificationPreference;
 import com.studentbag.backend.notifications.entity.UserNotification;
-
 import com.studentbag.backend.notifications.exception.InvalidNotificationRequestException;
 import com.studentbag.backend.notifications.exception.NotificationNotFoundException;
 import com.studentbag.backend.notifications.mapper.NotificationMapper;
@@ -87,6 +86,7 @@ public class NotificationServiceImpl implements NotificationService {
                         .url(attachmentRequest.getUrl())
                         .fileName(attachmentRequest.getFileName())
                         .build();
+
                 notification.getAttachments().add(attachment);
             }
         }
@@ -94,6 +94,7 @@ public class NotificationServiceImpl implements NotificationService {
         notificationRepository.save(notification);
 
         List<User> recipients = resolveRecipients(request);
+
         if (recipients.isEmpty()) {
             throw new InvalidNotificationRequestException("No recipients found for this notification");
         }
@@ -127,15 +128,20 @@ public class NotificationServiceImpl implements NotificationService {
 
         return notificationMapper.toResponse(createdUserNotifications.get(0));
     }
-
     @Override
     @Transactional
-    public NotificationResponse createAndSendAdminNotification(UUID adminUserId, CreateAdminNotificationRequest request) {
-        User admin = userRepository.findById(adminUserId)
-                .orElseThrow(() -> new IllegalArgumentException("Admin user not found"));
+    public NotificationResponse createAndSendAdminNotification(
+            UUID senderUserId,
+            CreateAdminNotificationRequest request
+    ) {
+        User sender = userRepository.findById(senderUserId)
+                .orElseThrow(() -> new IllegalArgumentException("Sender user not found"));
 
-        if (admin.getRole() != UserRole.ADMINISTRATOR) {
-            throw new IllegalArgumentException("Only admin can send this notification");
+        if (sender.getRole() != UserRole.ADMINISTRATOR
+                && sender.getRole() != UserRole.INSTRUCTOR) {
+            throw new IllegalArgumentException(
+                    "Only administrator or instructor can send this notification"
+            );
         }
 
         CreateNotificationRequest internalRequest = new CreateNotificationRequest();
@@ -224,6 +230,7 @@ public class NotificationServiceImpl implements NotificationService {
             }
 
             StudentNotificationPreference preference = getPreferenceOrDefault(task.getStudent());
+
             if (!Boolean.TRUE.equals(preference.getRecurringTaskNotificationsEnabled())) {
                 continue;
             }
@@ -231,7 +238,7 @@ public class NotificationServiceImpl implements NotificationService {
             CreateNotificationRequest request = new CreateNotificationRequest();
             request.setTitle(buildRecurringTaskTitle(task));
             request.setBody(buildRecurringTaskBody(task));
-            request.setType(NotificationType.TASK);
+            request.setType(NotificationType.RECURRING_TASK);
             request.setPriority(NotificationPriority.HIGH);
             request.setChannel(NotificationChannel.BOTH);
             request.setTargetType(NotificationTargetType.INTERNAL_ROUTE);
@@ -263,6 +270,7 @@ public class NotificationServiceImpl implements NotificationService {
                 }
 
                 StudentNotificationPreference preference = getPreferenceOrDefault(student);
+
                 if (!Boolean.TRUE.equals(preference.getEventNotificationsEnabled())) {
                     continue;
                 }
@@ -307,19 +315,27 @@ public class NotificationServiceImpl implements NotificationService {
 
     private List<User> resolveRecipients(CreateNotificationRequest request) {
         if (request.isBroadcastToAll()) {
-            return userRepository.findAll();
+            return userRepository.findAll().stream()
+                    .filter(user -> shouldReceiveNotification(user, request.getType()))
+                    .toList();
         }
 
-        return userRepository.findAllById(request.getRecipientUserIds());
+        return userRepository.findAllById(request.getRecipientUserIds()).stream()
+                .filter(user -> shouldReceiveNotification(user, request.getType()))
+                .toList();
     }
 
     private List<UUID> resolveAdminRecipients(CreateAdminNotificationRequest request) {
         return switch (request.getAudienceType()) {
             case ALL_USERS -> userRepository.findAll().stream()
+                    .filter(user -> shouldReceiveNotification(user, request.getType()))
                     .map(User::getId)
                     .toList();
 
-            case ALL_STUDENTS -> userRepository.findAllByRole(UserRole.STUDENT).stream()
+            case ALL_STUDENTS -> studentRepository.findAll().stream()
+                    .filter(student -> student.getUser() != null)
+                    .filter(student -> shouldReceiveStudentNotification(student, request.getType()))
+                    .map(Student::getUser)
                     .map(User::getId)
                     .toList();
 
@@ -331,19 +347,59 @@ public class NotificationServiceImpl implements NotificationService {
                 if (request.getUserIds() == null || request.getUserIds().isEmpty()) {
                     throw new IllegalArgumentException("userIds are required for SPECIFIC_USERS");
                 }
-                yield request.getUserIds();
+
+                yield userRepository.findAllById(request.getUserIds()).stream()
+                        .filter(user -> shouldReceiveNotification(user, request.getType()))
+                        .map(User::getId)
+                        .toList();
             }
 
             case SPECIFIC_STUDENTS -> {
                 if (request.getStudentIds() == null || request.getStudentIds().isEmpty()) {
                     throw new IllegalArgumentException("studentIds are required for SPECIFIC_STUDENTS");
                 }
+
                 yield studentRepository.findAllById(request.getStudentIds()).stream()
+                        .filter(student -> student.getUser() != null)
+                        .filter(student -> shouldReceiveStudentNotification(student, request.getType()))
                         .map(Student::getUser)
-                        .filter(Objects::nonNull)
                         .map(User::getId)
                         .toList();
             }
+        };
+    }
+
+    private boolean shouldReceiveNotification(User user, NotificationType type) {
+        if (user == null) {
+            return false;
+        }
+
+        if (user.getRole() != UserRole.STUDENT) {
+            return true;
+        }
+
+        return studentRepository.findByUserId(user.getId())
+                .map(student -> shouldReceiveStudentNotification(student, type))
+                .orElse(true);
+    }
+
+    private boolean shouldReceiveStudentNotification(Student student, NotificationType type) {
+        if (student == null) {
+            return false;
+        }
+
+        StudentNotificationPreference preference = getPreferenceOrDefault(student);
+
+        return switch (type) {
+            case EVENT -> Boolean.TRUE.equals(preference.getEventNotificationsEnabled());
+
+            case TASK -> Boolean.TRUE.equals(preference.getTaskNotificationsEnabled());
+
+            case RECURRING_TASK -> Boolean.TRUE.equals(preference.getRecurringTaskNotificationsEnabled());
+
+            case MONTHLY_STATS -> Boolean.TRUE.equals(preference.getMonthlyStatsNotificationsEnabled());
+
+            case GENERAL, SYSTEM -> true;
         };
     }
 
