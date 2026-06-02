@@ -15,16 +15,15 @@ import java.util.Optional;
 public interface StudentScheduleRepository extends JpaRepository<StudentSchedule, Long> {
 
     @Query("""
-        SELECT DISTINCT s
-        FROM StudentSchedule s
-        LEFT JOIN FETCH s.entries e
-        LEFT JOIN FETCH e.courseSection cs
-        LEFT JOIN FETCH cs.instructor
-        LEFT JOIN FETCH e.event ev
-        WHERE s.student.id = :studentId
-          AND s.status <> com.studentbag.backend.domain.enums.schedule.ScheduleStatus.DELETED
-        ORDER BY s.id DESC
-    """)
+    SELECT DISTINCT s
+    FROM StudentSchedule s
+    LEFT JOIN FETCH s.entries e
+    LEFT JOIN FETCH e.courseSection cs
+    LEFT JOIN FETCH cs.instructor
+    LEFT JOIN FETCH e.event ev
+    WHERE s.student.id = :studentId
+    ORDER BY s.id DESC
+""")
     List<StudentSchedule> findAllByStudentId(@Param("studentId") Long studentId);
 
     @Query("""

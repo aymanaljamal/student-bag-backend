@@ -6,5 +6,7 @@ public enum NotificationType {
     EVENT,
     TASK,
     RECURRING_TASK,
-    MONTHLY_STATS
+    MONTHLY_STATS,
+    ADMIN_MESSAGE,
+    STUDENT_MESSAGE
 }

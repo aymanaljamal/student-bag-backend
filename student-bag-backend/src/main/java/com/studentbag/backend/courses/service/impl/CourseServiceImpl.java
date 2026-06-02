@@ -72,9 +72,13 @@ public class CourseServiceImpl implements CourseService {
 
     @Override
     public CourseResponseDTO getById(Long id, boolean includeSections) {
-        return courseRepository.findById(id)
-                .map(course -> courseMapper.toResponse(course, includeSections))
+        Course course = includeSections
+                ? courseRepository.findDetailedById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Course not found"))
+                : courseRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Course not found"));
+
+        return courseMapper.toResponse(course, includeSections);
     }
 
     @Override

@@ -72,12 +72,23 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         Long currentTermId = getCurrentTermId();
 
         List<ResourceCourseSummaryResponse> activeCourses =
-                resourceIntegrationService.getActiveScheduleCoursesForLibrary(currentUserId, currentTermId);
+                resourceIntegrationService.getActiveScheduleCoursesForLibrary(
+                        currentUserId,
+                        currentTermId
+                );
 
-        // مهم: أنشئ فولدرات للكورسات النشطة تلقائيًا إذا مش موجودة
-        ensureCourseFoldersForActiveCourses(student, root, activeCourses);
+        /*
+         * مهم:
+         * لا ننشئ فولدرات المواد النشطة تلقائيًا هنا.
+         *
+         * السبب:
+         * إذا الطالب حذف فولدر مادة موجودة في الجدول النشط،
+         * ما بدنا يرجع الفولدر لحاله بمجرد فتح الشاشة أو عمل refresh.
+         *
+         * إنشاء الفولدرات الناقصة لازم يتم فقط من endpoint:
+         * POST /api/resources/personal/folders/generate-from-active-schedule
+         */
 
-        // بعد الإنشاء، اقرأ الفولدرات من جديد
         List<PersonalResourceFolderResponse> topFolders = folderRepository
                 .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
                         student.getId(),
@@ -93,52 +104,13 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
                 .activeScheduleCourses(activeCourses)
                 .build();
     }
+
     @Override
     public PersonalResourceFolderResponse getOrCreateRootFolder(UUID currentUserId) {
         Student student = getStudentByUserId(currentUserId);
         return PersonalResourceFolderMapper.toResponse(getOrCreateRootFolderEntity(student));
     }
-    private void ensureCourseFoldersForActiveCourses(
-            Student student,
-            PersonalResourceFolder root,
-            List<ResourceCourseSummaryResponse> activeCourses
-    ) {
-        if (activeCourses == null || activeCourses.isEmpty()) {
-            return;
-        }
 
-        for (ResourceCourseSummaryResponse courseDto : activeCourses) {
-            List<PersonalResourceFolder> existingFolders =
-                    folderRepository.findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
-                            student.getId(),
-                            courseDto.getId()
-                    );
-
-            if (!existingFolders.isEmpty()) {
-                continue;
-            }
-
-            Course course = getCourse(courseDto.getId());
-
-            PersonalResourceFolder folder = PersonalResourceFolder.builder()
-                    .name(course.getNameEnglish() != null && !course.getNameEnglish().isBlank()
-                            ? course.getNameEnglish()
-                            : course.getNameArabic())
-                    .description("System-generated folder from active schedule")
-                    .student(student)
-                    .parentFolder(root)
-                    .course(course)
-                    .isRoot(false)
-                    .isSystemGenerated(true)
-                    .isDeleted(false)
-                    .isArchived(false)
-                    .showLinkedNotes(true)
-                    .showLinkedTasks(true)
-                    .build();
-
-            folderRepository.save(folder);
-        }
-    }
     @Override
     public PersonalResourceFolderResponse createFolder(
             UUID currentUserId,
@@ -290,19 +262,19 @@ public class PersonalResourceLibraryServiceImpl implements PersonalResourceLibra
         Student student = getStudentByUserId(currentUserId);
         PersonalResourceFolder root = getOrCreateRootFolderEntity(student);
 
-        Long termId = request != null && request.getTermId() != null
-                ? request.getTermId()
-                : getCurrentTermId();
+        Long termId = getCurrentTermId();
 
-        List<ActiveScheduleCourseDTO> courses;
+        List<ResourceCourseSummaryResponse> activeCourses =
+                resourceIntegrationService.getActiveScheduleCoursesForLibrary(
+                        currentUserId,
+                        termId
+                );
 
-        try {
-            courses = scheduleManagementService.getActiveScheduleCourses(student.getId(), termId);
-        } catch (Exception e) {
+        if (activeCourses == null || activeCourses.isEmpty()) {
             return List.of();
         }
 
-        return courses.stream()
+        return activeCourses.stream()
                 .map(courseDto -> {
                     List<PersonalResourceFolder> existingFolders =
                             folderRepository.findByStudentIdAndCourseIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(

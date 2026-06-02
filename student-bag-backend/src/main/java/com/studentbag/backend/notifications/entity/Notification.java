@@ -78,4 +78,15 @@ public class Notification {
     @OneToMany(mappedBy = "notification", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<NotificationAttachment> attachments = new ArrayList<>();
+
+
+    public void addRecipient(UserNotification userNotification) {
+        recipients.add(userNotification);
+        userNotification.setNotification(this);
+    }
+
+    public void addAttachment(NotificationAttachment attachment) {
+        attachments.add(attachment);
+        attachment.setNotification(this);
+    }
 }

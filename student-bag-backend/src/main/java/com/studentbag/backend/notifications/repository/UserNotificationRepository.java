@@ -79,4 +79,47 @@ public interface UserNotificationRepository extends JpaRepository<UserNotificati
         where un.user.id = :userId
     """)
     int deleteAllForUser(@Param("userId") UUID userId);
+
+    @Query("""
+    select un
+    from UserNotification un
+    join fetch un.notification n
+    where n.id = :notificationId
+      and un.user.id = :userId
+""")
+    Optional<UserNotification> findByNotificationIdAndUserId(
+            @Param("notificationId") UUID notificationId,
+            @Param("userId") UUID userId
+    );
+
+    @Query("""
+    select count(un)
+    from UserNotification un
+    where un.notification.id = :notificationId
+""")
+    long countByNotificationId(@Param("notificationId") UUID notificationId);
+
+    @Query("""
+    select count(un)
+    from UserNotification un
+    where un.notification.id = :notificationId
+      and un.readFlag = true
+""")
+    long countReadByNotificationId(@Param("notificationId") UUID notificationId);
+
+    @Query("""
+    select count(un)
+    from UserNotification un
+    where un.notification.id = :notificationId
+      and un.readFlag = false
+""")
+    long countUnreadByNotificationId(@Param("notificationId") UUID notificationId);
+
+    @Modifying
+    @Query("""
+    delete from UserNotification un
+    where un.notification.id = :notificationId
+""")
+    int deleteByNotificationId(@Param("notificationId") UUID notificationId);
+
 }

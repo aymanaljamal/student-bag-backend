@@ -74,7 +74,7 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
         activeSchedules.stream()
                 .filter(activeSchedule -> activeSchedule.getId() != null)
                 .filter(activeSchedule -> !activeSchedule.getId().equals(schedule.getId()))
-                .forEach(activeSchedule -> activeSchedule.setStatus(ScheduleStatus.DELETED));
+                .forEach(activeSchedule ->activeSchedule.setStatus(ScheduleStatus.ARCHIVED));
 
         schedule.setStatus(ScheduleStatus.ACTIVE);
         schedule.setActivatedAt(LocalDateTime.now());
@@ -83,7 +83,7 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
         scheduleRepository.save(schedule);
 
         log.info(
-                "Schedule {} activated for student {}. Old active schedules were soft deleted.",
+                "Schedule {} activated for student {}.Old active schedules were archived.",
                 scheduleId,
                 studentId
         );
