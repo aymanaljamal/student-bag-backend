@@ -384,7 +384,7 @@ public class NotificationServiceImpl implements NotificationService {
     }
 
     private boolean shouldReceiveStudentNotification(Student student, NotificationType type) {
-        if (student == null) {
+        if (student == null || type == null) {
             return false;
         }
 
@@ -399,10 +399,11 @@ public class NotificationServiceImpl implements NotificationService {
 
             case MONTHLY_STATS -> Boolean.TRUE.equals(preference.getMonthlyStatsNotificationsEnabled());
 
-            case GENERAL, SYSTEM -> true;
+            case GENERAL, SYSTEM, ADMIN_MESSAGE -> true;
+
+            case STUDENT_MESSAGE -> false;
         };
     }
-
     private StudentNotificationPreference getPreferenceOrDefault(Student student) {
         return preferenceRepository.findByStudentId(student.getId())
                 .orElse(

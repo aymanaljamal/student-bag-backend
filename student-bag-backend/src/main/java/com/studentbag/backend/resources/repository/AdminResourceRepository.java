@@ -48,4 +48,8 @@ public interface AdminResourceRepository extends JpaRepository<AdminResource, Lo
             Long learningObjectId,
             ResourceApprovalStatus approvalStatus
     );
+
+    List<AdminResource> findTop30ByApprovalStatusAndIsVisibleTrueAndIsDeletedFalseOrderByCreatedAtDesc(
+            ResourceApprovalStatus approvalStatus
+    );
 }

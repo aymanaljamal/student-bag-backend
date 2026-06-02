@@ -1,11 +1,19 @@
 package com.studentbag.backend.chatbot.service.impl;
 
-import com.studentbag.backend.chatbot.dto.context.*;
+import com.studentbag.backend.chatbot.dto.context.AiFileContentContext;
+import com.studentbag.backend.chatbot.dto.context.DashboardAiContext;
+import com.studentbag.backend.chatbot.dto.context.EventAiContext;
+import com.studentbag.backend.chatbot.dto.context.GradeAiContext;
+import com.studentbag.backend.chatbot.dto.context.GradeCourseAiContext;
+import com.studentbag.backend.chatbot.dto.context.NoteAiContext;
+import com.studentbag.backend.chatbot.dto.context.ResourceAiContext;
+import com.studentbag.backend.chatbot.dto.context.ScheduleEntryAiContext;
+import com.studentbag.backend.chatbot.dto.context.StudentAiContextDto;
+import com.studentbag.backend.chatbot.dto.context.TaskAiContext;
 import com.studentbag.backend.chatbot.service.AiPromptBuilderService;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
-import java.util.StringJoiner;
 
 @Service
 public class AiPromptBuilderServiceImpl implements AiPromptBuilderService {
@@ -23,7 +31,7 @@ public class AiPromptBuilderServiceImpl implements AiPromptBuilderService {
                 - Help university students manage academic life.
                 - Answer clearly and practically.
                 - Use only provided student data.
-                - Never invent fake schedule/tasks/grades.
+                - Never invent fake schedule/tasks/grades/resources/files.
                 - Be concise and student-friendly.
                 - Support Arabic and English.
                 - Prioritize deadlines and urgent tasks.
@@ -38,9 +46,17 @@ public class AiPromptBuilderServiceImpl implements AiPromptBuilderService {
                 - Grades
                 - Resources
                 - Dashboard analytics
+                - Attached file content previews
 
-                Never expose technical JSON.
-                Never mention internal backend structures.
+                Formatting rules:
+                - Use Markdown when helpful.
+                - Use tables only when they make the answer clearer.
+                - Use fenced code blocks for code.
+                - For quizzes, use clear numbered questions and include answers if the user asks for answers.
+                - For schedules or comparisons, tables are allowed.
+                - Do not return raw JSON unless the user explicitly asks.
+                - Never expose technical JSON.
+                - Never mention internal backend structures.
                 """;
     }
 
@@ -65,6 +81,8 @@ public class AiPromptBuilderServiceImpl implements AiPromptBuilderService {
         appendNotes(sb, context);
 
         appendResources(sb, context);
+
+        appendFileContents(sb, context);
 
         appendEvents(sb, context);
 
@@ -170,6 +188,7 @@ public class AiPromptBuilderServiceImpl implements AiPromptBuilderService {
                 .append(dashboard.getRegisteredEvents())
                 .append("\n\n");
     }
+
     private void appendTodaySchedule(
             StringBuilder sb,
             StudentAiContextDto context
@@ -337,6 +356,54 @@ public class AiPromptBuilderServiceImpl implements AiPromptBuilderService {
             if (resource.getCategory() != null) {
                 sb.append(" | ");
                 sb.append(resource.getCategory());
+            }
+
+            sb.append("\n");
+        }
+
+        sb.append("\n");
+    }
+
+    private void appendFileContents(
+            StringBuilder sb,
+            StudentAiContextDto context
+    ) {
+        if (context.getFileContents() == null ||
+                context.getFileContents().isEmpty()) {
+            return;
+        }
+
+        sb.append("=== ATTACHED FILE CONTENTS ===\n");
+
+        for (AiFileContentContext file : context.getFileContents()) {
+
+            sb.append("- Source: ")
+                    .append(nullSafe(file.getOwnerType()))
+                    .append(" | Title: ")
+                    .append(nullSafe(file.getTitle()));
+
+            if (file.getFileName() != null) {
+                sb.append(" | File: ")
+                        .append(file.getFileName());
+            }
+
+            if (file.getMimeType() != null) {
+                sb.append(" | Mime: ")
+                        .append(file.getMimeType());
+            }
+
+            if (file.getFileSizeBytes() != null) {
+                sb.append(" | SizeBytes: ")
+                        .append(file.getFileSizeBytes());
+            }
+
+            sb.append("\n");
+
+            if (file.getContentPreview() != null &&
+                    !file.getContentPreview().isBlank()) {
+                sb.append("Content Preview:\n")
+                        .append(file.getContentPreview())
+                        .append("\n");
             }
 
             sb.append("\n");
