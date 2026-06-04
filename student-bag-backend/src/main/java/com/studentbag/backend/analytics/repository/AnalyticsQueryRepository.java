@@ -72,7 +72,18 @@ public class AnalyticsQueryRepository {
     // -------------------------------------------------------------------------
     // Identity Resolvers
     // -------------------------------------------------------------------------
-
+    public UUID resolveUserIdByEmail(String email) {
+        try {
+            return jdbc.queryForObject("""
+            SELECT id
+            FROM users
+            WHERE email = ?
+        """, UUID.class, email);
+        } catch (Exception ex) {
+            log.warn("Resolve user id by email failed: {}", ex.getMessage());
+            return null;
+        }
+    }
     public Long resolveStudentIdByEmail(String email) {
         return countSafe("""
             SELECT s.id
@@ -551,7 +562,26 @@ public class AnalyticsQueryRepository {
     // -------------------------------------------------------------------------
     // Instructor Analytics
     // -------------------------------------------------------------------------
+    public Long countInstructorResourcesByUserId(UUID userId) {
+        return countSafe("""
+        SELECT COUNT(*)
+        FROM admin_resources
+        WHERE uploaded_by_type = 'INSTRUCTOR'
+          AND uploaded_by_user_id = ?
+          AND COALESCE(is_deleted, false) = false
+    """, userId);
+    }
 
+    public Long countInstructorResourcesByStatusAndUserId(UUID userId, String status) {
+        return countSafe("""
+        SELECT COUNT(*)
+        FROM admin_resources
+        WHERE uploaded_by_type = 'INSTRUCTOR'
+          AND uploaded_by_user_id = ?
+          AND approval_status = ?
+          AND COALESCE(is_deleted, false) = false
+    """, userId, status);
+    }
     public Long countInstructorResources(Long instructorId) {
         return countSafe("""
             SELECT COUNT(*)
@@ -671,13 +701,14 @@ public class AnalyticsQueryRepository {
             WHERE instructor_id = ?
         """, instructorId);
     }
-
     public Long sumInstructorSectionsEnrolled(Long instructorId) {
         return countSafe("""
-            SELECT COALESCE(SUM(enrolled_count), 0)
-            FROM course_sections
-            WHERE instructor_id = ?
-        """, instructorId);
+        SELECT COUNT(*)
+        FROM enrollments e
+        JOIN course_sections cs ON cs.id = e.course_section_id
+        WHERE cs.instructor_id = ?
+          AND COALESCE(e.status, 'ENROLLED') <> 'CANCELLED'
+    """, instructorId);
     }
 
     // -------------------------------------------------------------------------

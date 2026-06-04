@@ -1,7 +1,11 @@
 package com.studentbag.backend.resources.service.impl;
 
-import com.studentbag.backend.notifications.repository.UserDeviceTokenRepository;
-import com.studentbag.backend.notifications.service.FirebasePushNotificationService;
+import com.studentbag.backend.domain.enums.notifications.NotificationChannel;
+import com.studentbag.backend.domain.enums.notifications.NotificationPriority;
+import com.studentbag.backend.domain.enums.notifications.NotificationTargetType;
+import com.studentbag.backend.domain.enums.notifications.NotificationType;
+import com.studentbag.backend.notifications.dto.request.CreateNotificationRequest;
+import com.studentbag.backend.notifications.service.NotificationService;
 import com.studentbag.backend.resources.entity.AdminResource;
 import com.studentbag.backend.resources.service.ResourceNotificationService;
 import com.studentbag.backend.users.entity.User;
@@ -12,100 +16,127 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Implementation of {@link ResourceNotificationService}.
- *
- * <p>This service sends Firebase push notifications related to
- * public resource moderation workflow:
- * <ul>
- *     <li>Approved resource</li>
- *     <li>Rejected resource</li>
- *     <li>Removed resource</li>
- * </ul>
- *
- * <p>Important:
- * If uploadedById in {@link AdminResource} is not the same as application user id,
- * replace the resolution logic with your own instructor/admin/student lookup.</p>
- */
 @Service
 @RequiredArgsConstructor
 public class ResourceNotificationServiceImpl implements ResourceNotificationService {
 
     private final UserRepository userRepository;
-    private final UserDeviceTokenRepository userDeviceTokenRepository;
-    private final FirebasePushNotificationService firebasePushNotificationService;
+    private final NotificationService notificationService;
 
     @Override
     public void notifyInstructorResourceApproved(AdminResource resource, UUID adminUserId) {
         User targetUser = resolveUploaderUser(resource);
+
         if (targetUser == null) {
             return;
         }
 
-        List<String> tokens = userDeviceTokenRepository.findActiveTokensByUserId(targetUser.getId());
-
-        firebasePushNotificationService.sendToTokens(
-                tokens,
+        sendResourceNotification(
+                targetUser,
                 "Resource approved",
-                "Your resource \"" + resource.getTitle() + "\" has been approved.",
+                buildApprovedBody(resource),
                 "/instructor/resources",
-                "RESOURCE_APPROVED"
+                NotificationType.SYSTEM
         );
     }
 
     @Override
-    public void notifyInstructorResourceRejected(AdminResource resource, UUID adminUserId, String reason) {
+    public void notifyInstructorResourceRejected(
+            AdminResource resource,
+            UUID adminUserId,
+            String reason
+    ) {
         User targetUser = resolveUploaderUser(resource);
+
         if (targetUser == null) {
             return;
         }
 
-        List<String> tokens = userDeviceTokenRepository.findActiveTokensByUserId(targetUser.getId());
-
-        firebasePushNotificationService.sendToTokens(
-                tokens,
+        sendResourceNotification(
+                targetUser,
                 "Resource rejected",
-                reason == null || reason.isBlank()
-                        ? "Your resource \"" + resource.getTitle() + "\" was rejected."
-                        : "Your resource \"" + resource.getTitle() + "\" was rejected. Reason: " + reason,
+                buildRejectedBody(resource, reason),
                 "/instructor/resources",
-                "RESOURCE_REJECTED"
+                NotificationType.SYSTEM
         );
     }
 
     @Override
-    public void notifyInstructorResourceRemoved(AdminResource resource, UUID adminUserId, String reason) {
+    public void notifyInstructorResourceRemoved(
+            AdminResource resource,
+            UUID adminUserId,
+            String reason
+    ) {
         User targetUser = resolveUploaderUser(resource);
+
         if (targetUser == null) {
             return;
         }
 
-        List<String> tokens = userDeviceTokenRepository.findActiveTokensByUserId(targetUser.getId());
-
-        firebasePushNotificationService.sendToTokens(
-                tokens,
-                "Resource removed",
-                reason == null || reason.isBlank()
-                        ? "Your resource \"" + resource.getTitle() + "\" was removed by admin."
-                        : "Your resource \"" + resource.getTitle() + "\" was removed by admin. Reason: " + reason,
+        sendResourceNotification(
+                targetUser,
+                "Resource deleted",
+                buildRemovedBody(resource, reason),
                 "/instructor/resources",
-                "RESOURCE_REMOVED"
+                NotificationType.SYSTEM
         );
     }
 
-    /**
-     * Resolves uploader user from resource uploader id.
-     *
-     * <p>Current implementation assumes uploadedById can be mapped directly
-     * to your application user table through a custom convention.
-     * Replace this logic with real instructor/student/admin entity lookup if needed.</p>
-     */
+    private void sendResourceNotification(
+            User targetUser,
+            String title,
+            String body,
+            String targetValue,
+            NotificationType type
+    ) {
+        CreateNotificationRequest request = new CreateNotificationRequest();
+        request.setTitle(title);
+        request.setBody(body);
+        request.setType(type);
+        request.setPriority(NotificationPriority.NORMAL);
+        request.setChannel(NotificationChannel.BOTH);
+        request.setTargetType(NotificationTargetType.INTERNAL_ROUTE);
+        request.setTargetValue(targetValue);
+        request.setBroadcastToAll(false);
+        request.setRecipientUserIds(List.of(targetUser.getId()));
+
+        notificationService.createAndSend(request);
+    }
+
     private User resolveUploaderUser(AdminResource resource) {
-        // TODO:
-        // Replace with actual mapping logic if uploadedById represents Instructor.id / Student.id / Admin.id
-        return userRepository.findAll().stream()
-                .filter(user -> Math.abs(user.getId().hashCode()) + 0L == resource.getUploadedById())
-                .findFirst()
+        if (resource == null || resource.getUploadedByUserId() == null) {
+            return null;
+        }
+
+        return userRepository.findById(resource.getUploadedByUserId())
                 .orElse(null);
+    }
+
+    private String buildApprovedBody(AdminResource resource) {
+        return "Your resource \"" + safeTitle(resource) + "\" has been approved.";
+    }
+
+    private String buildRejectedBody(AdminResource resource, String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "Your resource \"" + safeTitle(resource) + "\" was rejected.";
+        }
+
+        return "Your resource \"" + safeTitle(resource) + "\" was rejected. Reason: " + reason.trim();
+    }
+
+    private String buildRemovedBody(AdminResource resource, String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "Your resource \"" + safeTitle(resource) + "\" was deleted by admin.";
+        }
+
+        return "Your resource \"" + safeTitle(resource) + "\" was deleted by admin. Reason: " + reason.trim();
+    }
+
+    private String safeTitle(AdminResource resource) {
+        if (resource == null || resource.getTitle() == null || resource.getTitle().isBlank()) {
+            return "Untitled resource";
+        }
+
+        return resource.getTitle().trim();
     }
 }

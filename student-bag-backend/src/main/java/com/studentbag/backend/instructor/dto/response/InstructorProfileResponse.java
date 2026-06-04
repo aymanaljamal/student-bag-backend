@@ -1,13 +1,23 @@
 package com.studentbag.backend.instructor.dto.response;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
-@Data
+import java.util.UUID;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
 @Builder
 public class InstructorProfileResponse {
 
     private Long id;
+    private UUID userId;
+
     private String externalId;
 
     private String fullNameArabic;
@@ -23,7 +33,6 @@ public class InstructorProfileResponse {
     private String email;
     private String phone;
     private String avatarUrl;
-
     private String languageCode;
 
     private boolean accountConfirmed;

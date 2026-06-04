@@ -3,7 +3,11 @@ package com.studentbag.backend.resources.service.impl;
 import com.studentbag.backend.courses.entity.Course;
 import com.studentbag.backend.courses.repository.CourseRepository;
 import com.studentbag.backend.domain.enums.UserRole;
-import com.studentbag.backend.domain.enums.resources.*;
+import com.studentbag.backend.domain.enums.resources.ResourceActionType;
+import com.studentbag.backend.domain.enums.resources.ResourceApprovalStatus;
+import com.studentbag.backend.domain.enums.resources.ResourceCategory;
+import com.studentbag.backend.domain.enums.resources.ResourceOwnerType;
+import com.studentbag.backend.domain.enums.resources.ResourceType;
 import com.studentbag.backend.resources.dto.request.ApproveAdminResourceRequest;
 import com.studentbag.backend.resources.dto.request.CreateAdminResourceRequest;
 import com.studentbag.backend.resources.dto.request.RejectAdminResourceRequest;
@@ -30,22 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Implementation of {@link AdminResourceService}.
- *
- * <p>This service manages the public/general resource library workflow:
- * <ul>
- *     <li>Create submitted public resources by instructor/admin</li>
- *     <li>Update submitted resources</li>
- *     <li>Approve / reject / remove resources by admin</li>
- *     <li>Store approval workflow actions</li>
- *     <li>Return public resources by course/category/type/status</li>
- * </ul>
- *
- * <p>Important note:
- * Files are expected to be uploaded from Flutter to Firebase Storage first,
- * then backend stores only the file URL and metadata.
- */
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -74,7 +62,14 @@ public class AdminResourceServiceImpl implements AdminResourceService {
         resource.setCourse(course);
         resource.setLearningObject(learningObject);
         resource.setUploadedByType(uploadedByType);
+
+        /*
+         * uploadedById is still kept for your current business logic.
+         * uploadedByUserId is the real UUID used for notifications.
+         */
         resource.setUploadedById(resolveBusinessOwnerId(currentUser, uploadedByType));
+        resource.setUploadedByUserId(currentUser.getId());
+
         resource.setApprovalStatus(ResourceApprovalStatus.PENDING);
         resource.setIsVisible(false);
         resource.setIsDeleted(false);
@@ -90,6 +85,27 @@ public class AdminResourceServiceImpl implements AdminResourceService {
         );
 
         return AdminResourceMapper.toResponse(saved);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<AdminResourceResponse> getMyUploadedResources(
+            UUID currentUserId,
+            ResourceOwnerType ownerType
+    ) {
+        User currentUser = getUser(currentUserId);
+        validateUploaderRole(currentUser, ownerType);
+
+        Long ownerId = resolveBusinessOwnerId(currentUser, ownerType);
+
+        return adminResourceRepository
+                .findByUploadedByTypeAndUploadedByIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                        ownerType,
+                        ownerId
+                )
+                .stream()
+                .map(AdminResourceMapper::toResponse)
+                .toList();
     }
 
     @Override
@@ -206,7 +222,10 @@ public class AdminResourceServiceImpl implements AdminResourceService {
             Long ownerId
     ) {
         return adminResourceRepository
-                .findByUploadedByTypeAndUploadedByIdAndIsDeletedFalseOrderByCreatedAtDesc(ownerType, ownerId)
+                .findByUploadedByTypeAndUploadedByIdAndIsDeletedFalseOrderByCreatedAtDesc(
+                        ownerType,
+                        ownerId
+                )
                 .stream()
                 .map(AdminResourceMapper::toResponse)
                 .toList();
@@ -221,7 +240,9 @@ public class AdminResourceServiceImpl implements AdminResourceService {
     ) {
         return adminResourceRepository
                 .findByUploadedByTypeAndUploadedByIdAndApprovalStatusAndIsDeletedFalseOrderByCreatedAtDesc(
-                        ownerType, ownerId, status
+                        ownerType,
+                        ownerId,
+                        status
                 )
                 .stream()
                 .map(AdminResourceMapper::toResponse)
@@ -236,6 +257,8 @@ public class AdminResourceServiceImpl implements AdminResourceService {
     ) {
         User admin = getAdminUser(adminUserId);
         AdminResource resource = getResourceEntity(resourceId);
+
+        ensureUploadedByUserId(resource);
 
         resource.setApprovalStatus(ResourceApprovalStatus.APPROVED);
         resource.setIsVisible(true);
@@ -266,6 +289,8 @@ public class AdminResourceServiceImpl implements AdminResourceService {
         User admin = getAdminUser(adminUserId);
         AdminResource resource = getResourceEntity(resourceId);
 
+        ensureUploadedByUserId(resource);
+
         resource.setApprovalStatus(ResourceApprovalStatus.REJECTED);
         resource.setIsVisible(false);
         resource.setApprovedByAdminId(resolveBusinessOwnerId(admin, ResourceOwnerType.ADMIN));
@@ -281,7 +306,11 @@ public class AdminResourceServiceImpl implements AdminResourceService {
                 request.getAdminNotes()
         );
 
-        resourceNotificationService.notifyInstructorResourceRejected(saved, adminUserId, request.getAdminNotes());
+        resourceNotificationService.notifyInstructorResourceRejected(
+                saved,
+                adminUserId,
+                request.getAdminNotes()
+        );
 
         return AdminResourceMapper.toResponse(saved);
     }
@@ -295,22 +324,28 @@ public class AdminResourceServiceImpl implements AdminResourceService {
         User admin = getAdminUser(adminUserId);
         AdminResource resource = getResourceEntity(resourceId);
 
+        ensureUploadedByUserId(resource);
+
         resource.setApprovalStatus(ResourceApprovalStatus.REMOVED);
         resource.setIsVisible(false);
         resource.setApprovedByAdminId(resolveBusinessOwnerId(admin, ResourceOwnerType.ADMIN));
         resource.setAdminNotes(adminNote);
 
-        adminResourceRepository.save(resource);
+        AdminResource saved = adminResourceRepository.save(resource);
 
         saveApprovalAction(
-                resource,
+                saved,
                 ResourceActionType.DELETED,
                 ResourceOwnerType.ADMIN,
-                resource.getApprovedByAdminId(),
+                saved.getApprovedByAdminId(),
                 adminNote
         );
 
-        resourceNotificationService.notifyInstructorResourceRemoved(resource, adminUserId, adminNote);
+        resourceNotificationService.notifyInstructorResourceRemoved(
+                saved,
+                adminUserId,
+                adminNote
+        );
 
         return ResourceOperationResponse.builder()
                 .targetId(resourceId)
@@ -330,17 +365,36 @@ public class AdminResourceServiceImpl implements AdminResourceService {
 
         validateCanModifyResource(currentUser, resource);
 
+        ensureUploadedByUserId(resource);
+
         resource.setIsDeleted(true);
         resource.setIsVisible(false);
-        adminResourceRepository.save(resource);
+
+        AdminResource saved = adminResourceRepository.save(resource);
 
         saveApprovalAction(
-                resource,
+                saved,
                 ResourceActionType.DELETED,
-                resource.getUploadedByType(),
-                resource.getUploadedById(),
-                "Soft deleted"
+                currentUser.getRole() == UserRole.ADMINISTRATOR
+                        ? ResourceOwnerType.ADMIN
+                        : saved.getUploadedByType(),
+                currentUser.getRole() == UserRole.ADMINISTRATOR
+                        ? resolveBusinessOwnerId(currentUser, ResourceOwnerType.ADMIN)
+                        : saved.getUploadedById(),
+                "Resource deleted"
         );
+
+        boolean deletedByAdmin = currentUser.getRole() == UserRole.ADMINISTRATOR;
+        boolean ownerIsDifferentUser = saved.getUploadedByUserId() != null
+                && !saved.getUploadedByUserId().equals(currentUser.getId());
+
+        if (deletedByAdmin && ownerIsDifferentUser) {
+            resourceNotificationService.notifyInstructorResourceRemoved(
+                    saved,
+                    currentUserId,
+                    "Resource deleted by admin"
+            );
+        }
 
         return ResourceOperationResponse.builder()
                 .targetId(resourceId)
@@ -355,7 +409,8 @@ public class AdminResourceServiceImpl implements AdminResourceService {
     public List<ResourceApprovalActionResponse> getResourceApprovalHistory(Long resourceId) {
         getResourceEntity(resourceId);
 
-        return resourceApprovalActionRepository.findByAdminResourceIdOrderByCreatedAtDesc(resourceId)
+        return resourceApprovalActionRepository
+                .findByAdminResourceIdOrderByCreatedAtDesc(resourceId)
                 .stream()
                 .map(ResourceApprovalActionMapper::toResponse)
                 .toList();
@@ -368,9 +423,11 @@ public class AdminResourceServiceImpl implements AdminResourceService {
 
     private User getAdminUser(UUID adminUserId) {
         User admin = getUser(adminUserId);
+
         if (admin.getRole() != UserRole.ADMINISTRATOR) {
             throw new IllegalArgumentException("Only administrator can perform this action");
         }
+
         return admin;
     }
 
@@ -393,48 +450,63 @@ public class AdminResourceServiceImpl implements AdminResourceService {
                 .orElseThrow(() -> new IllegalArgumentException("Admin resource not found"));
     }
 
-    /**
-     * Validates whether the current user is allowed to submit under the given owner type.
-     */
     private void validateUploaderRole(User currentUser, ResourceOwnerType uploadedByType) {
-        if (uploadedByType == ResourceOwnerType.ADMIN && currentUser.getRole() != UserRole.ADMINISTRATOR) {
+        if (uploadedByType == ResourceOwnerType.ADMIN &&
+                currentUser.getRole() != UserRole.ADMINISTRATOR) {
             throw new IllegalArgumentException("Only admin can upload as ADMIN");
         }
 
-        if (uploadedByType == ResourceOwnerType.INSTRUCTOR && currentUser.getRole() != UserRole.INSTRUCTOR) {
+        if (uploadedByType == ResourceOwnerType.INSTRUCTOR &&
+                currentUser.getRole() != UserRole.INSTRUCTOR) {
             throw new IllegalArgumentException("Only instructor can upload as INSTRUCTOR");
         }
 
-        if (uploadedByType == ResourceOwnerType.STUDENT && currentUser.getRole() != UserRole.STUDENT) {
+        if (uploadedByType == ResourceOwnerType.STUDENT &&
+                currentUser.getRole() != UserRole.STUDENT) {
             throw new IllegalArgumentException("Only student can upload as STUDENT");
         }
     }
 
-    /**
-     * Validates whether the user can modify the resource.
-     *
-     * <p>Admin can always modify.
-     * Other users can modify only their own uploaded resources.</p>
-     */
     private void validateCanModifyResource(User currentUser, AdminResource resource) {
         if (currentUser.getRole() == UserRole.ADMINISTRATOR) {
             return;
         }
 
-        Long currentBusinessId = resolveBusinessOwnerId(currentUser, resource.getUploadedByType());
+        if (resource.getUploadedByUserId() != null &&
+                resource.getUploadedByUserId().equals(currentUser.getId())) {
+            return;
+        }
+
+        Long currentBusinessId = resolveBusinessOwnerId(
+                currentUser,
+                resource.getUploadedByType()
+        );
+
         if (!resource.getUploadedById().equals(currentBusinessId)) {
             throw new IllegalArgumentException("Unauthorized to modify this resource");
         }
     }
 
-    /**
-     * Resolves the business owner id stored inside resource tables.
-     *
-     * <p>Replace this logic with your real instructor/student/admin entity ids
-     * if your project stores separate tables for those roles.</p>
+    /*
+     * Keep this only for compatibility with your current uploadedById field.
+     * Do not use uploadedById for notifications.
      */
     private Long resolveBusinessOwnerId(User user, ResourceOwnerType ownerType) {
         return Math.abs(user.getId().hashCode()) + 0L;
+    }
+
+    /*
+     * This protects old resources that were created before adding uploadedByUserId.
+     * New resources will always have uploadedByUserId from createResource().
+     */
+    private void ensureUploadedByUserId(AdminResource resource) {
+        if (resource.getUploadedByUserId() != null) {
+            return;
+        }
+
+        throw new IllegalArgumentException(
+                "Resource owner user id is missing. This resource was probably created before uploadedByUserId was added."
+        );
     }
 
     private void saveApprovalAction(

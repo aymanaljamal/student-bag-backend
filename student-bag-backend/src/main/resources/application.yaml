@@ -36,6 +36,7 @@ app:
     expiration: 86400000
 
 openai:
-  api-key: ${OPENAI_API_KEY}
+  api-key: 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
   model: ${OPENAI_MODEL:gpt-4.1-mini}
   base-url: https://api.openai.com/v1
+

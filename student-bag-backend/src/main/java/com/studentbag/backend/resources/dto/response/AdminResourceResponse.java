@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Data
 @Builder
@@ -21,6 +22,8 @@ public class AdminResourceResponse {
 
     private ResourceOwnerType uploadedByType;
     private Long uploadedById;
+    private UUID uploadedByUserId;
+
     private Long approvedByAdminId;
 
     private Long courseId;
