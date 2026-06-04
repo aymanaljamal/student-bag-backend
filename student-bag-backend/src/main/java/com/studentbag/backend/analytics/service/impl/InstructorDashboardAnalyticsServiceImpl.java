@@ -22,22 +22,24 @@ public class InstructorDashboardAnalyticsServiceImpl implements InstructorDashbo
 
     @Override
     public InstructorDashboardAnalyticsResponse getMyDashboardAnalyticsByEmail(String email) {
+        UUID userId = queryRepository.resolveUserIdByEmail(email);
         Long instructorId = queryRepository.resolveInstructorIdByEmail(email);
 
         return InstructorDashboardAnalyticsResponse.builder()
-                .resourceAnalytics(buildResourceAnalytics(instructorId))
+                .resourceAnalytics(buildResourceAnalytics(userId))
                 .eventAnalytics(buildEventAnalytics(instructorId))
                 .teachingAnalytics(buildTeachingAnalytics(instructorId))
-                .charts(buildCharts(instructorId))
+                .charts(buildCharts(userId, instructorId))
                 .build();
     }
-    private InstructorDashboardAnalyticsResponse.ResourceAnalytics buildResourceAnalytics(Long instructorId) {
+
+    private InstructorDashboardAnalyticsResponse.ResourceAnalytics buildResourceAnalytics(UUID userId) {
         return mapper.toInstructorResourceAnalytics(
-                queryRepository.countInstructorResources(instructorId),
-                queryRepository.countInstructorResourcesByStatus(instructorId, "PENDING"),
-                queryRepository.countInstructorResourcesByStatus(instructorId, "APPROVED"),
-                queryRepository.countInstructorResourcesByStatus(instructorId, "REJECTED"),
-                queryRepository.countInstructorResourcesByStatus(instructorId, "REMOVED")
+                queryRepository.countInstructorResourcesByUserId(userId),
+                queryRepository.countInstructorResourcesByStatusAndUserId(userId, "PENDING"),
+                queryRepository.countInstructorResourcesByStatusAndUserId(userId, "APPROVED"),
+                queryRepository.countInstructorResourcesByStatusAndUserId(userId, "REJECTED"),
+                queryRepository.countInstructorResourcesByStatusAndUserId(userId, "REMOVED")
         );
     }
 
@@ -59,12 +61,15 @@ public class InstructorDashboardAnalyticsServiceImpl implements InstructorDashbo
         );
     }
 
-    private InstructorDashboardAnalyticsResponse.InstructorCharts buildCharts(Long instructorId) {
+    private InstructorDashboardAnalyticsResponse.InstructorCharts buildCharts(
+            UUID userId,
+            Long instructorId
+    ) {
         List<ChartDataPointDto> resourcesByStatus = List.of(
-                mapper.chartPoint("Pending", queryRepository.countInstructorResourcesByStatus(instructorId, "PENDING")),
-                mapper.chartPoint("Approved", queryRepository.countInstructorResourcesByStatus(instructorId, "APPROVED")),
-                mapper.chartPoint("Rejected", queryRepository.countInstructorResourcesByStatus(instructorId, "REJECTED")),
-                mapper.chartPoint("Removed", queryRepository.countInstructorResourcesByStatus(instructorId, "REMOVED"))
+                mapper.chartPoint("Pending", queryRepository.countInstructorResourcesByStatusAndUserId(userId, "PENDING")),
+                mapper.chartPoint("Approved", queryRepository.countInstructorResourcesByStatusAndUserId(userId, "APPROVED")),
+                mapper.chartPoint("Rejected", queryRepository.countInstructorResourcesByStatusAndUserId(userId, "REJECTED")),
+                mapper.chartPoint("Removed", queryRepository.countInstructorResourcesByStatusAndUserId(userId, "REMOVED"))
         );
 
         List<ChartDataPointDto> eventsByStatus = List.of(

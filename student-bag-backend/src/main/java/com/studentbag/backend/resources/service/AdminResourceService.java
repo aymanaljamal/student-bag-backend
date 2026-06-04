@@ -1,6 +1,9 @@
 package com.studentbag.backend.resources.service;
 
-import com.studentbag.backend.domain.enums.resources.*;
+import com.studentbag.backend.domain.enums.resources.ResourceApprovalStatus;
+import com.studentbag.backend.domain.enums.resources.ResourceCategory;
+import com.studentbag.backend.domain.enums.resources.ResourceOwnerType;
+import com.studentbag.backend.domain.enums.resources.ResourceType;
 import com.studentbag.backend.resources.dto.request.ApproveAdminResourceRequest;
 import com.studentbag.backend.resources.dto.request.CreateAdminResourceRequest;
 import com.studentbag.backend.resources.dto.request.RejectAdminResourceRequest;
@@ -8,7 +11,6 @@ import com.studentbag.backend.resources.dto.request.UpdateAdminResourceRequest;
 import com.studentbag.backend.resources.dto.response.AdminResourceResponse;
 import com.studentbag.backend.resources.dto.response.ResourceApprovalActionResponse;
 import com.studentbag.backend.resources.dto.response.ResourceOperationResponse;
-
 
 import java.util.List;
 import java.util.UUID;
@@ -19,6 +21,11 @@ public interface AdminResourceService {
             UUID currentUserId,
             ResourceOwnerType uploadedByType,
             CreateAdminResourceRequest request
+    );
+
+    List<AdminResourceResponse> getMyUploadedResources(
+            UUID currentUserId,
+            ResourceOwnerType ownerType
     );
 
     AdminResourceResponse updateResource(
@@ -43,7 +50,9 @@ public interface AdminResourceService {
 
     List<AdminResourceResponse> getPendingResources();
 
-    List<AdminResourceResponse> getResourcesByApprovalStatus(ResourceApprovalStatus status);
+    List<AdminResourceResponse> getResourcesByApprovalStatus(
+            ResourceApprovalStatus status
+    );
 
     List<AdminResourceResponse> getResourcesUploadedBy(
             ResourceOwnerType ownerType,
@@ -79,5 +88,7 @@ public interface AdminResourceService {
             UUID currentUserId
     );
 
-    List<ResourceApprovalActionResponse> getResourceApprovalHistory(Long resourceId);
+    List<ResourceApprovalActionResponse> getResourceApprovalHistory(
+            Long resourceId
+    );
 }

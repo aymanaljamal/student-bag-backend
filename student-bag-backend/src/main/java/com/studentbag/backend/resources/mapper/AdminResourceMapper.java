@@ -42,30 +42,39 @@ public class AdminResourceMapper {
         if (request.getTitle() != null) {
             entity.setTitle(request.getTitle());
         }
+
         if (request.getDescription() != null) {
             entity.setDescription(request.getDescription());
         }
+
         if (request.getResourceType() != null) {
             entity.setResourceType(request.getResourceType());
         }
+
         if (request.getCategory() != null) {
             entity.setCategory(request.getCategory());
         }
+
         if (request.getFileUrl() != null) {
             entity.setFileUrl(request.getFileUrl());
         }
+
         if (request.getExternalLink() != null) {
             entity.setExternalLink(request.getExternalLink());
         }
+
         if (request.getThumbnailUrl() != null) {
             entity.setThumbnailUrl(request.getThumbnailUrl());
         }
+
         if (request.getMimeType() != null) {
             entity.setMimeType(request.getMimeType());
         }
+
         if (request.getFileName() != null) {
             entity.setFileName(request.getFileName());
         }
+
         if (request.getFileSizeBytes() != null) {
             entity.setFileSizeBytes(request.getFileSizeBytes());
         }
@@ -85,8 +94,11 @@ public class AdminResourceMapper {
                 .resourceType(entity.getResourceType())
                 .category(entity.getCategory())
                 .approvalStatus(entity.getApprovalStatus())
+
                 .uploadedByType(entity.getUploadedByType())
                 .uploadedById(entity.getUploadedById())
+                .uploadedByUserId(entity.getUploadedByUserId())
+
                 .approvedByAdminId(entity.getApprovedByAdminId())
 
                 .courseId(entity.getCourse() != null ? entity.getCourse().getId() : null)

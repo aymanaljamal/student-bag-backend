@@ -9,6 +9,8 @@ import com.studentbag.backend.domain.enums.resources.ResourceType;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.util.UUID;
+
 @Entity
 @Table(name = "admin_resources")
 @Getter
@@ -23,7 +25,8 @@ public class AdminResource extends BaseEntity {
 
     @Column(columnDefinition = "TEXT")
     private String description;
-
+    @Column(name = "uploaded_by_user_id", nullable = false)
+    private UUID uploadedByUserId;
     @Enumerated(EnumType.STRING)
     @Column(name = "resource_type", nullable = false, length = 30)
     private ResourceType resourceType;

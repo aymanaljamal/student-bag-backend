@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: student-bag-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: student_bag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ayman@123
+    ports:
+      - "5432:5432"
+    volumes:
+      - student_bag_postgres_data:/var/lib/postgresql/data
+    networks:
+      - student_bag_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d student_bag"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  student-bag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: student-bag-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/student_bag
+      DB_USERNAME: postgres
+      DB_PASSWORD: ayman@123
+
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION}
+
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+    networks:
+      - student_bag_network
+
+volumes:
+  student_bag_postgres_data:
+
+networks:
+  student_bag_network:
+    driver: bridge

@@ -63,7 +63,17 @@ public class AdminResourceController {
 
         return user.getId();
     }
+    @GetMapping("/me")
+    public ResponseEntity<List<AdminResourceResponse>> getMyUploadedResources(
+            @AuthenticationPrincipal UserDetails userDetails,
+            @RequestParam ResourceOwnerType ownerType
+    ) {
+        UUID currentUserId = getCurrentUserId(userDetails);
 
+        return ResponseEntity.ok(
+                adminResourceService.getMyUploadedResources(currentUserId, ownerType)
+        );
+    }
     /**
      * Submits a new public resource.
      *
