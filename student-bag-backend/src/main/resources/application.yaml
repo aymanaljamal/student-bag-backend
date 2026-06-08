@@ -3,9 +3,10 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/student_bag
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:ayman@123}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/student_bag}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:ayman@123}
+    driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
@@ -21,8 +22,8 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ${MAIL_USERNAME:ayman.aljamal2017@gmail.com}
-    password: ${MAIL_PASSWORD:ihep rqnx jyyl ucnp}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
@@ -33,10 +34,9 @@ spring:
 app:
   jwt:
     secret: ${JWT_SECRET:your_super_secret_key_123456789012345678901234567890}
-    expiration: 86400000
+    expiration: ${JWT_EXPIRATION:86400000}
 
 openai:
-  api-key: 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
+  api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-4.1-mini}
-  base-url: https://api.openai.com/v1
-
+  base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}

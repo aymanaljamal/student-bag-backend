@@ -5,8 +5,8 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: student_bag
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ayman@123
+      POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME}
+      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -14,7 +14,7 @@ services:
     networks:
       - student_bag_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d student_bag"]
+      test: ["CMD-SHELL", "pg_isready -U ${SPRING_DATASOURCE_USERNAME} -d student_bag"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,9 +31,9 @@ services:
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/student_bag
-      DB_USERNAME: postgres
-      DB_PASSWORD: ayman@123
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
 
       MAIL_USERNAME: ${MAIL_USERNAME}
       MAIL_PASSWORD: ${MAIL_PASSWORD}
@@ -44,6 +44,13 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+
+      GOOGLE_APPLICATION_CREDENTIALS: /app/src/main/resources/firebase/student-bag-fe020-firebase-adminsdk-fbsvc-973767165c.json
+      FIREBASE_STORAGE_BUCKET: ${FIREBASE_STORAGE_BUCKET}
+
+    volumes:
+      - ./src/main/resources/firebase/student-bag-fe020-firebase-adminsdk-fbsvc-973767165c.json:/app/src/main/resources/firebase/student-bag-fe020-firebase-adminsdk-fbsvc-973767165c.json:ro
+
     networks:
       - student_bag_network
 
