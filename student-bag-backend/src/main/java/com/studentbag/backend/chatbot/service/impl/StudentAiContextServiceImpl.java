@@ -14,7 +14,6 @@ import com.studentbag.backend.chatbot.exception.AiContextBuildException;
 import com.studentbag.backend.chatbot.exception.AiStudentNotFoundException;
 import com.studentbag.backend.chatbot.file.AiFileContentReaderService;
 import com.studentbag.backend.chatbot.mapper.DashboardAiMapper;
-import com.studentbag.backend.chatbot.mapper.EventAiMapper;
 import com.studentbag.backend.chatbot.mapper.GradeAiMapper;
 import com.studentbag.backend.chatbot.mapper.NoteAiMapper;
 import com.studentbag.backend.chatbot.mapper.ResourceAiMapper;
@@ -22,9 +21,13 @@ import com.studentbag.backend.chatbot.mapper.ScheduleEntryAiMapper;
 import com.studentbag.backend.chatbot.mapper.StudentAiProfileMapper;
 import com.studentbag.backend.chatbot.mapper.TaskAiMapper;
 import com.studentbag.backend.chatbot.service.StudentAiContextService;
+import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
 import com.studentbag.backend.domain.enums.resources.ResourceApprovalStatus;
 import com.studentbag.backend.domain.enums.tasks.TaskStatus;
+import com.studentbag.backend.events.entity.Event;
+import com.studentbag.backend.events.entity.EventRegistration;
 import com.studentbag.backend.events.repository.EventRegistrationRepository;
+import com.studentbag.backend.events.repository.EventRepository;
 import com.studentbag.backend.grades.repository.GradeCalculationRepository;
 import com.studentbag.backend.notes.entity.NoteAttachment;
 import com.studentbag.backend.notes.repository.NoteAttachmentRepository;
@@ -59,6 +62,8 @@ import java.util.Map;
 public class StudentAiContextServiceImpl implements StudentAiContextService {
 
     private static final int DEFAULT_LIMIT = 10;
+    private static final int FULL_SCHEDULE_LIMIT = 80;
+    private static final int EVENT_LIMIT = 20;
     private static final int RESOURCE_LIMIT = 12;
     private static final int GENERAL_ADMIN_RESOURCE_SCAN_LIMIT = 30;
 
@@ -80,6 +85,7 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
     private final NoteAttachmentRepository noteAttachmentRepository;
     private final TaskAttachmentRepository taskAttachmentRepository;
     private final EventRegistrationRepository eventRegistrationRepository;
+    private final EventRepository eventRepository;
     private final GradeCalculationRepository gradeCalculationRepository;
 
     private final AiFileContentReaderService aiFileContentReaderService;
@@ -90,7 +96,6 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
     private final TaskAiMapper taskAiMapper;
     private final NoteAiMapper noteAiMapper;
     private final ResourceAiMapper resourceAiMapper;
-    private final EventAiMapper eventAiMapper;
     private final GradeAiMapper gradeAiMapper;
 
     @Override
@@ -101,13 +106,16 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
                 .student(studentAiProfileMapper.toContext(student))
                 .dashboard(loadDashboard(studentId))
                 .todaySchedule(loadTodaySchedule(studentId))
+                .upcomingSchedule(loadFullActiveSchedule(studentId))
                 .activeTasks(loadActiveTasks(studentId))
                 .overdueTasks(loadOverdueTasks(studentId))
                 .dueTodayTasks(loadDueTodayTasks(studentId))
                 .importantNotes(loadImportantNotes(studentId))
                 .resources(loadSmartResources(studentId, null))
                 .upcomingEvents(loadUpcomingEvents(studentId))
+                .registeredEvents(loadRegisteredEvents(studentId))
                 .grades(loadLatestGrades(studentId))
+                .gradeCalculations(loadGradeCalculations(studentId))
                 .build();
     }
 
@@ -119,13 +127,15 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
                 .student(studentAiProfileMapper.toContext(student))
                 .dashboard(loadDashboard(studentId))
                 .todaySchedule(loadTodaySchedule(studentId))
-                .upcomingSchedule(loadUpcomingSchedule(studentId))
+                .upcomingSchedule(loadFullActiveSchedule(studentId))
                 .dueTodayTasks(loadDueTodayTasks(studentId))
                 .overdueTasks(loadOverdueTasks(studentId))
                 .importantNotes(loadImportantNotes(studentId))
                 .resources(loadSmartResources(studentId, null))
                 .upcomingEvents(loadUpcomingEvents(studentId))
+                .registeredEvents(loadRegisteredEvents(studentId))
                 .grades(loadLatestGrades(studentId))
+                .gradeCalculations(loadGradeCalculations(studentId))
                 .build();
     }
 
@@ -138,6 +148,7 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
                 .activeTasks(loadActiveTasks(studentId))
                 .overdueTasks(loadOverdueTasks(studentId))
                 .dueTodayTasks(loadDueTodayTasks(studentId))
+                .resources(loadSmartResources(studentId, null))
                 .build();
     }
 
@@ -147,8 +158,9 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
 
         return StudentAiContextDto.builder()
                 .student(studentAiProfileMapper.toContext(student))
+                .dashboard(loadDashboard(studentId))
                 .todaySchedule(loadTodaySchedule(studentId))
-                .upcomingSchedule(loadUpcomingSchedule(studentId))
+                .upcomingSchedule(loadFullActiveSchedule(studentId))
                 .build();
     }
 
@@ -180,6 +192,7 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
         return StudentAiContextDto.builder()
                 .student(studentAiProfileMapper.toContext(student))
                 .upcomingEvents(loadUpcomingEvents(studentId))
+                .registeredEvents(loadRegisteredEvents(studentId))
                 .build();
     }
 
@@ -190,6 +203,7 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
         return StudentAiContextDto.builder()
                 .student(studentAiProfileMapper.toContext(student))
                 .grades(loadLatestGrades(studentId))
+                .gradeCalculations(loadGradeCalculations(studentId))
                 .build();
     }
 
@@ -200,10 +214,12 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
         var note = noteRepository.findByIdAndStudentIdAndIsDeletedFalse(noteId, studentId)
                 .orElseThrow(() -> new AiContextBuildException("Note not found or not owned by student."));
 
-        String query = "quiz " + safeText(readField(note, "getTitle"));
+        String query = "quiz questions exam explain summarize " + safeText(readField(note, "getTitle"));
 
         return StudentAiContextDto.builder()
                 .student(studentAiProfileMapper.toContext(student))
+                .todaySchedule(loadTodaySchedule(studentId))
+                .upcomingSchedule(loadFullActiveSchedule(studentId))
                 .importantNotes(List.of(noteAiMapper.toContext(note)))
                 .resources(loadSmartResources(studentId, query))
                 .fileContents(loadRelevantFileContents(studentId, query))
@@ -218,18 +234,23 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
 
         String q = normalize(question);
 
-        if (containsAny(q, "quiz", "quizzes", "test", "exam", "questions",
-                "كويز", "اختبار", "امتحان", "اسئله", "اسئلة", "سؤال")) {
+        if (containsAny(q,
+                "quiz", "quizzes", "test", "exam", "questions", "question",
+                "generate questions", "make questions", "mcq", "true false",
+                "كويز", "اختبار", "امتحان", "اسئله", "اسئلة", "سؤال",
+                "اسالني", "اسألني", "دربني", "اعمل اسئلة", "اعمل اسئله")) {
             return buildQuizContextFromQuestion(studentId, question);
         }
 
-        if (containsAny(q, "study today", "study plan", "plan", "revision",
-                "شو ادرس", "خطة", "خطه", "ادرس", "اذاكر", "راجع")) {
+        if (containsAny(q,
+                "study today", "study plan", "plan", "revision", "prepare",
+                "شو ادرس", "خطة", "خطه", "ادرس", "اذاكر", "راجع", "مراجعة", "مراجعه")) {
             return buildTodayStudyContext(studentId);
         }
 
-        if (containsAny(q, "task", "deadline", "assignment", "due",
-                "تاسك", "مهمه", "مهمة", "واجب", "موعد", "تسليم")) {
+        if (containsAny(q,
+                "task", "tasks", "deadline", "assignment", "due", "todo", "to do",
+                "تاسك", "تاسكات", "مهمه", "مهمة", "مهام", "واجب", "موعد", "تسليم", "شو علي")) {
 
             if (shouldReadFileContent(question)) {
                 return buildAttachmentAwareTaskContext(studentId, question);
@@ -238,13 +259,22 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
             return buildTaskContext(studentId);
         }
 
-        if (containsAny(q, "schedule", "timetable", "calendar", "lecture", "class", "room",
-                "جدول", "محاضره", "محاضرة", "قاعة", "قاعه", "غرفة", "كلاس")) {
+        if (containsAny(q,
+                "schedule", "timetable", "calendar", "lecture", "lectures", "class", "classes",
+                "room", "hall", "instructor", "doctor", "teacher", "professor",
+                "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+                "جدول", "محاضره", "محاضرة", "محاضرات", "قاعة", "قاعه", "غرفة",
+                "كلاس", "سكشن", "دكتور", "استاذ", "استاذي", "مدرس", "مين دكتور",
+                "وين محاضرتي", "عندي اليوم", "اليوم", "بكره", "بكرة",
+                "السبت", "الاحد", "الأحد", "الاثنين", "الإثنين", "الثلاثاء",
+                "الاربعاء", "الأربعاء", "الخميس", "الجمعه", "الجمعة")) {
             return buildScheduleContext(studentId);
         }
 
-        if (containsAny(q, "note", "notes", "explain", "summary", "summarize",
-                "نوت", "ملاحظه", "ملاحظة", "شرح", "اشرح", "لخص", "تلخيص")) {
+        if (containsAny(q,
+                "note", "notes", "explain", "summary", "summarize", "simplify", "read",
+                "نوت", "نوتس", "ملاحظه", "ملاحظة", "شرح", "اشرح", "لخص",
+                "تلخيص", "ملخص", "اقرا", "اقرأ", "فسر", "وضح")) {
 
             if (shouldReadFileContent(question)) {
                 return buildAttachmentAwareNotesContext(studentId, question);
@@ -253,8 +283,11 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
             return buildNotesContext(studentId);
         }
 
-        if (containsAny(q, "resource", "resources", "file", "folder", "pdf", "material",
-                "ملف", "مصدر", "رابط", "مرفق", "مادة", "مواد", "مرجع")) {
+        if (containsAny(q,
+                "resource", "resources", "file", "files", "folder", "pdf", "material",
+                "materials", "attachment", "attachments", "document", "slides",
+                "ملف", "ملفات", "مصدر", "مصادر", "رابط", "مرفق", "مرفقات",
+                "مادة", "مواد", "مرجع", "سلايدات", "بي دي اف")) {
 
             if (shouldReadFileContent(question)) {
                 return buildAttachmentAwareResourcesContext(studentId, question);
@@ -263,13 +296,19 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
             return buildResourcesContext(studentId);
         }
 
-        if (containsAny(q, "event", "opportunity", "workshop", "training",
-                "ايفنت", "فعاليه", "فعالية", "حدث", "فرصه", "فرصة")) {
+        if (containsAny(q,
+                "event", "events", "opportunity", "opportunities", "workshop", "training",
+                "internship", "volunteer", "registration", "company",
+                "ايفنت", "فعاليه", "فعالية", "فعاليات", "حدث", "فرصه", "فرصة",
+                "فرص", "تدريب", "ورشه", "ورشة", "تطوع", "تسجيل", "شركة", "شركه")) {
             return buildEventsContext(studentId);
         }
 
-        if (containsAny(q, "grade", "gpa", "mark", "average",
-                "علامه", "علامة", "معدل", "حساب", "نسبة")) {
+        if (containsAny(q,
+                "grade", "grades", "gpa", "cgpa", "mark", "marks", "average",
+                "percentage", "calculation", "calculate",
+                "علامه", "علامة", "علامات", "معدل", "معدلي", "المعدل",
+                "حساب", "نسبة", "نسبه", "كم بجيب", "كم لازم اجيب", "تراكمي", "فصلي")) {
             return buildGradesContext(studentId);
         }
 
@@ -286,10 +325,12 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
         return StudentAiContextDto.builder()
                 .student(studentAiProfileMapper.toContext(student))
                 .todaySchedule(loadTodaySchedule(studentId))
-                .upcomingSchedule(loadUpcomingSchedule(studentId))
+                .upcomingSchedule(loadFullActiveSchedule(studentId))
                 .importantNotes(loadRelevantNotesForQuestion(studentId, question))
                 .resources(loadSmartResources(studentId, question))
                 .fileContents(loadRelevantFileContents(studentId, question))
+                .grades(loadLatestGrades(studentId))
+                .gradeCalculations(loadGradeCalculations(studentId))
                 .build();
     }
 
@@ -300,7 +341,7 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
                 .student(studentAiProfileMapper.toContext(student))
                 .dashboard(loadDashboard(studentId))
                 .todaySchedule(loadTodaySchedule(studentId))
-                .upcomingSchedule(loadUpcomingSchedule(studentId))
+                .upcomingSchedule(loadFullActiveSchedule(studentId))
                 .activeTasks(loadActiveTasks(studentId))
                 .overdueTasks(loadOverdueTasks(studentId))
                 .dueTodayTasks(loadDueTodayTasks(studentId))
@@ -308,7 +349,9 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
                 .resources(loadSmartResources(studentId, question))
                 .fileContents(loadRelevantFileContents(studentId, question))
                 .upcomingEvents(loadUpcomingEvents(studentId))
+                .registeredEvents(loadRegisteredEvents(studentId))
                 .grades(loadLatestGrades(studentId))
+                .gradeCalculations(loadGradeCalculations(studentId))
                 .build();
     }
 
@@ -390,6 +433,15 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
                 .toList();
     }
 
+    private List<ScheduleEntryAiContext> loadFullActiveSchedule(Long studentId) {
+        return scheduleEntryRepository
+                .findAllActiveScheduleEntriesForAi(studentId)
+                .stream()
+                .map(scheduleEntryAiMapper::toContext)
+                .limit(FULL_SCHEDULE_LIMIT)
+                .toList();
+    }
+
     private List<TaskAiContext> loadActiveTasks(Long studentId) {
         return taskRepository
                 .findTop10ByStudentIdAndStatusNotAndArchivedFalseAndIsDeletedFalseOrderByDueDateTimeAsc(
@@ -443,7 +495,14 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
         String q = normalize(question);
 
         List<NoteAiContext> matched = notes.stream()
-                .filter(note -> matchesQuestion(q, note.getTitle(), note.getCourseName()))
+                .filter(note -> matchesQuestion(
+                        q,
+                        note.getTitle(),
+                        note.getContentText(),
+                        note.getCourseCode(),
+                        note.getCourseName(),
+                        note.getTags()
+                ))
                 .limit(DEFAULT_LIMIT)
                 .toList();
 
@@ -746,6 +805,7 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
                         attachment.getTypeValue(),
                         readField(attachment.getNote(), "getTitle"),
                         readField(attachment.getNote(), "getContentHtml"),
+                        readField(attachment.getNote(), "getContentText"),
                         readField(readObjectField(attachment.getNote(), "getCourse"), "getCode"),
                         readField(readObjectField(attachment.getNote(), "getCourse"), "getCourseCode"),
                         readField(readObjectField(attachment.getNote(), "getCourse"), "getName"),
@@ -878,38 +938,17 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
 
         return containsAny(
                 q,
-                "quiz",
-                "quizzes",
-                "test",
-                "exam",
-                "questions",
-                "summary",
-                "summarize",
-                "explain",
-                "read",
-                "file",
-                "pdf",
-                "document",
-                "attachment",
-                "material",
-                "content",
-                "كويز",
-                "اختبار",
-                "امتحان",
-                "اسئله",
-                "اسئلة",
-                "لخص",
-                "تلخيص",
-                "اشرح",
-                "شرح",
-                "اقرا",
-                "اقرأ",
-                "ملف",
-                "مرفق",
-                "اتاشمنت",
-                "بي دي اف",
-                "محتوى",
-                "محتوي"
+                "quiz", "quizzes", "test", "exam", "questions", "question",
+                "summary", "summarize", "explain", "read", "file", "files",
+                "pdf", "document", "attachment", "attachments", "material",
+                "materials", "content", "lecture", "slides", "chapter",
+                "lesson", "generate questions", "make questions", "mcq", "true false",
+                "كويز", "اختبار", "امتحان", "اسئله", "اسئلة", "سؤال",
+                "اسالني", "اسألني", "دربني", "لخص", "تلخيص", "ملخص",
+                "اشرح", "شرح", "فسر", "وضح", "اقرا", "اقرأ", "ملف",
+                "ملفات", "مرفق", "مرفقات", "اتاشمنت", "بي دي اف",
+                "محتوى", "محتوي", "محاضره", "محاضرة", "سلايدات",
+                "شباتر", "مادة", "مواد", "اعمل اسئلة", "اعمل اسئله"
         );
     }
 
@@ -945,9 +984,28 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
     }
 
     private ResourceAiContext toAdminResourceContext(AdminResource resource) {
+        if (resource == null) {
+            return null;
+        }
+
         return ResourceAiContext.builder()
+                .id(resource.getId())
                 .title(buildAdminResourceTitle(resource))
+                .description(resource.getDescription())
+                .resourceType(resource.getResourceType() != null ? resource.getResourceType().name() : null)
                 .category(resource.getCategory() != null ? resource.getCategory().name() : null)
+                .courseCode(readCourseField(resource.getCourse(), "getCode") != null
+                        ? readCourseField(resource.getCourse(), "getCode")
+                        : readCourseField(resource.getCourse(), "getCourseCode"))
+                .courseName(readCourseField(resource.getCourse(), "getName") != null
+                        ? readCourseField(resource.getCourse(), "getName")
+                        : readCourseField(resource.getCourse(), "getCourseName"))
+                .fileName(resource.getFileName())
+                .mimeType(resource.getMimeType())
+                .fileSizeBytes(resource.getFileSizeBytes())
+                .hasFile(resource.getFileUrl() != null && !resource.getFileUrl().isBlank())
+                .hasExternalLink(readField(resource, "getExternalUrl") != null)
+                .folderName("Resource Hub")
                 .build();
     }
 
@@ -981,12 +1039,132 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
     }
 
     private List<EventAiContext> loadUpcomingEvents(Long studentId) {
+        Map<Long, EventRegistration> registrationsByEventId = loadStudentRegistrationsMap(studentId);
+
+        return eventRepository
+                .findUpcomingVisibleEventsForAi(LocalDateTime.now())
+                .stream()
+                .limit(EVENT_LIMIT)
+                .map(event -> toEventContextForAi(event, registrationsByEventId.get(event.getId())))
+                .filter(event -> event != null)
+                .toList();
+    }
+
+    private List<EventAiContext> loadRegisteredEvents(Long studentId) {
         return eventRegistrationRepository
                 .findUpcomingRegisteredEventsForAi(studentId, LocalDateTime.now())
                 .stream()
-                .map(registration -> eventAiMapper.toContext(registration.getEvent()))
                 .limit(DEFAULT_LIMIT)
+                .map(registration -> toEventContextForAi(
+                        registration.getEvent(),
+                        registration
+                ))
+                .filter(event -> event != null)
                 .toList();
+    }
+
+    private Map<Long, EventRegistration> loadStudentRegistrationsMap(Long studentId) {
+        Map<Long, EventRegistration> result = new LinkedHashMap<>();
+
+        eventRegistrationRepository.findAllByStudentId(studentId)
+                .stream()
+                .filter(registration -> registration.getEvent() != null)
+                .filter(registration -> registration.getEvent().getId() != null)
+                .forEach(registration -> result.put(
+                        registration.getEvent().getId(),
+                        registration
+                ));
+
+        return result;
+    }
+
+    private EventAiContext toEventContextForAi(
+            Event event,
+            EventRegistration registration
+    ) {
+        if (event == null) {
+            return null;
+        }
+
+        Object opportunity = readObjectField(event, "getOpportunity");
+
+        return EventAiContext.builder()
+                .id(event.getId())
+                .title(event.getTitle())
+                .description(event.getDescription())
+                .eventType(event.getEventType() != null ? event.getEventType().name() : null)
+                .startDateTime(event.getStartDateTime())
+                .endDateTime(event.getEndDateTime())
+                .location(event.getLocation())
+                .department(event.getDepartment())
+                .host(readField(event, "getHost"))
+                .requiresRegistration(readBooleanField(event, "getRequiresRegistration"))
+                .isOpportunity(readBooleanField(event, "getIsOpportunity"))
+                .registered(isActiveRegistration(registration))
+                .registrationStatus(registration != null && registration.getStatus() != null
+                        ? registration.getStatus().name()
+                        : null)
+                .maxParticipants(readIntegerField(event, "getMaxParticipants"))
+                .registeredCount(countActiveRegistrationsSafe(event.getId()))
+                .registrationOpen(isEventRegistrationOpen(event))
+                .companyName(readField(opportunity, "getCompanyName"))
+                .roleTitle(readField(opportunity, "getRoleTitle"))
+                .field(readField(opportunity, "getField"))
+                .isPaid(readBooleanField(opportunity, "getIsPaid"))
+                .workMode(readField(opportunity, "getWorkMode"))
+                .applicationDeadline(readLocalDateField(opportunity, "getApplicationDeadline"))
+                .durationWeeks(readIntegerField(opportunity, "getDurationWeeks"))
+                .build();
+    }
+
+    private boolean isActiveRegistration(EventRegistration registration) {
+        return registration != null &&
+                registration.getStatus() != null &&
+                (
+                        registration.getStatus() == RegistrationStatus.REGISTERED ||
+                                registration.getStatus() == RegistrationStatus.CHECKED_IN
+                );
+    }
+
+    private Long countActiveRegistrationsSafe(Long eventId) {
+        if (eventId == null) {
+            return 0L;
+        }
+
+        return eventRegistrationRepository.countByEventIdAndStatusIn(
+                eventId,
+                List.of(
+                        RegistrationStatus.REGISTERED,
+                        RegistrationStatus.CHECKED_IN
+                )
+        );
+    }
+
+    private Boolean isEventRegistrationOpen(Event event) {
+        if (event == null) {
+            return false;
+        }
+
+        Boolean requiresRegistration = readBooleanField(event, "getRequiresRegistration");
+
+        if (!Boolean.TRUE.equals(requiresRegistration)) {
+            return false;
+        }
+
+        if (event.getStartDateTime() != null &&
+                event.getStartDateTime().isBefore(LocalDateTime.now())) {
+            return false;
+        }
+
+        Integer maxParticipants = readIntegerField(event, "getMaxParticipants");
+
+        if (maxParticipants == null || maxParticipants <= 0) {
+            return true;
+        }
+
+        Long activeCount = countActiveRegistrationsSafe(event.getId());
+
+        return activeCount < maxParticipants;
     }
 
     private GradeAiContext loadLatestGrades(Long studentId) {
@@ -996,11 +1174,25 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
                 .orElse(null);
     }
 
+    private List<GradeAiContext> loadGradeCalculations(Long studentId) {
+        return gradeCalculationRepository
+                .findTop10ByStudentIdOrderByUpdatedAtDesc(studentId)
+                .stream()
+                .map(gradeAiMapper::toContext)
+                .toList();
+    }
+
     private boolean containsAny(String text, String... keywords) {
         String normalizedText = normalize(text);
 
         for (String keyword : keywords) {
-            if (normalizedText.contains(normalize(keyword))) {
+            String normalizedKeyword = normalize(keyword);
+
+            if (normalizedKeyword.isBlank()) {
+                continue;
+            }
+
+            if (normalizedText.contains(normalizedKeyword)) {
                 return true;
             }
         }
@@ -1055,13 +1247,14 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
 
     private boolean isIgnoredToken(String token) {
         return switch (token) {
-            case "quiz", "quizzes", "test", "exam", "questions",
-                 "summary", "summarize", "explain", "read",
-                 "كويز", "اختبار", "امتحان", "اسئله", "اسئلة",
-                 "اعمل", "بدي", "اريد", "ابني", "ولد", "لخص",
-                 "تلخيص", "اشرح", "اقرا", "اقرأ",
-                 "generate", "make", "create", "from", "for", "the",
-                 "من", "عن", "على", "في" -> true;
+            case "quiz", "quizzes", "test", "exam", "questions", "question",
+                 "summary", "summarize", "explain", "read", "file", "files",
+                 "pdf", "document", "attachment", "attachments", "material",
+                 "materials", "content", "lecture", "slides", "chapter",
+                 "كويز", "اختبار", "امتحان", "اسئله", "اسئلة", "سؤال",
+                 "اعمل", "بدي", "اريد", "ابني", "ولد", "لخص", "تلخيص",
+                 "اشرح", "اقرا", "اقرأ", "generate", "make", "create",
+                 "from", "for", "the", "من", "عن", "على", "في", "الى", "إلى" -> true;
             default -> false;
         };
     }
@@ -1097,6 +1290,40 @@ public class StudentAiContextServiceImpl implements StudentAiContextService {
     private String readField(Object source, String getterName) {
         Object value = readObjectField(source, getterName);
         return value == null ? null : String.valueOf(value);
+    }
+
+    private Boolean readBooleanField(Object source, String getterName) {
+        Object value = readObjectField(source, getterName);
+
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+
+        return null;
+    }
+
+    private Integer readIntegerField(Object source, String getterName) {
+        Object value = readObjectField(source, getterName);
+
+        if (value instanceof Integer integerValue) {
+            return integerValue;
+        }
+
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+
+        return null;
+    }
+
+    private LocalDate readLocalDateField(Object source, String getterName) {
+        Object value = readObjectField(source, getterName);
+
+        if (value instanceof LocalDate localDate) {
+            return localDate;
+        }
+
+        return null;
     }
 
     private Object readObjectField(Object source, String getterName) {

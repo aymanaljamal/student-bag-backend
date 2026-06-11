@@ -20,6 +20,7 @@ import com.studentbag.backend.grades.dto.response.GradeAdviceDTO;
 import com.studentbag.backend.grades.dto.response.GradeCalculationResponse;
 import com.studentbag.backend.grades.dto.response.GradeInsightsResponse;
 import com.studentbag.backend.grades.dto.response.GradeWhatIfResponse;
+import com.studentbag.backend.grades.dto.response.WhatIfOptionDTO;
 import com.studentbag.backend.grades.dto.response.WhatIfRequiredCourseDTO;
 import com.studentbag.backend.grades.entity.GradeCalculation;
 import com.studentbag.backend.grades.entity.GradeCourseItem;
@@ -37,7 +38,6 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -691,15 +691,26 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         boolean possible = requiredAverageOnRemaining.compareTo(ZERO) >= 0
                 && requiredAverageOnRemaining.compareTo(scaleMax) <= 0;
 
-        List<WhatIfRequiredCourseDTO> perCourse = calculation.getItems().stream()
+        List<GradeCourseItem> remainingItems = calculation.getItems().stream()
                 .filter(this::isRemainingItem)
+                .toList();
+
+        List<WhatIfOptionDTO> options = buildWhatIfOptions(
+                remainingItems,
+                requiredAverageOnRemaining,
+                scaleMax
+        );
+
+        List<WhatIfRequiredCourseDTO> perCourse = options.isEmpty()
+                ? remainingItems.stream()
                 .map(item -> WhatIfRequiredCourseDTO.builder()
                         .itemId(item.getId())
                         .courseName(item.getCourseNameSnapshot())
                         .creditHours(nz(item.getCreditHoursSnapshot()))
                         .requiredValue(requiredAverageOnRemaining.setScale(2, RoundingMode.HALF_UP))
                         .build())
-                .toList();
+                .toList()
+                : options.get(0).getCourses();
 
         List<String> notes = new ArrayList<>();
         if (possible) {
@@ -743,6 +754,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                         "This target is not possible within this semester only."
                 ))
                 .requiredPerCourse(perCourse)
+                .options(options)
                 .notes(notes)
                 .build();
     }
@@ -850,15 +862,26 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 && remainingTargetInScale
                 && maxPossibleCumulative.compareTo(targetValue) >= 0;
 
-        List<WhatIfRequiredCourseDTO> perCourse = calculation.getItems().stream()
+        List<GradeCourseItem> remainingItems = calculation.getItems().stream()
                 .filter(this::isRemainingItem)
+                .toList();
+
+        List<WhatIfOptionDTO> options = buildWhatIfOptions(
+                remainingItems,
+                requiredAverageOnRemaining,
+                scaleMax
+        );
+
+        List<WhatIfRequiredCourseDTO> perCourse = options.isEmpty()
+                ? remainingItems.stream()
                 .map(item -> WhatIfRequiredCourseDTO.builder()
                         .itemId(item.getId())
                         .courseName(item.getCourseNameSnapshot())
                         .creditHours(nz(item.getCreditHoursSnapshot()))
                         .requiredValue(requiredAverageOnRemaining.setScale(2, RoundingMode.HALF_UP))
                         .build())
-                .toList();
+                .toList()
+                : options.get(0).getCourses();
 
         List<String> notes = new ArrayList<>();
         notes.add(bi(
@@ -916,8 +939,542 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                         "The cumulative target is not possible through this semester only."
                 ))
                 .requiredPerCourse(perCourse)
+                .options(options)
                 .notes(notes)
                 .build();
+    }
+
+
+    private List<WhatIfOptionDTO> buildWhatIfOptions(
+            List<GradeCourseItem> remainingItems,
+            BigDecimal requiredAverage,
+            BigDecimal scaleMax
+    ) {
+        if (remainingItems == null || remainingItems.isEmpty()) {
+            return List.of();
+        }
+
+        List<GradeCourseItem> validItems = remainingItems.stream()
+                .filter(Objects::nonNull)
+                .filter(item -> nz(item.getCreditHoursSnapshot()).compareTo(ZERO) > 0)
+                .sorted(Comparator.comparing(
+                        GradeCourseItem::getOrderIndex,
+                        Comparator.nullsLast(Integer::compareTo)
+                ))
+                .toList();
+
+        if (validItems.isEmpty()) {
+            return List.of();
+        }
+
+        if (requiredAverage.compareTo(ZERO) < 0 || requiredAverage.compareTo(scaleMax) > 0) {
+            return List.of();
+        }
+
+        BigDecimal delta = optionDelta(scaleMax);
+        List<WhatIfOptionDTO> options = new ArrayList<>();
+
+        addOptionIfUseful(options, buildBalancedOption(validItems, requiredAverage, scaleMax));
+
+        addOptionIfUseful(options, buildFlatOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "SAFE_MARGIN",
+                bi("خطة هامش الأمان", "Safety-margin plan"),
+                bi(
+                        "تضع هدفًا أعلى قليلًا من الحد الأدنى المطلوب حتى لا تكون الخطة حساسة لأي نقص بسيط.",
+                        "Sets a slightly higher target than the minimum required so the plan is not too sensitive to small drops."
+                ),
+                delta.multiply(new BigDecimal("0.35"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "HIGH_CREDIT_FOCUS",
+                bi("خطة التركيز على المواد الأعلى ساعات", "High-credit focus plan"),
+                bi(
+                        "ترفع المطلوب في المواد الأعلى ساعات لأنها الأكثر تأثيرًا على المعدل، وتخفف قليلًا عن المواد الأقل ساعات.",
+                        "Raises the requirement in higher-credit courses because they affect the average most, while slightly reducing pressure on lower-credit courses."
+                ),
+                buildCreditScores(validItems),
+                delta.multiply(new BigDecimal("1.10"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "LOW_CREDIT_BOOST",
+                bi("خطة رفع المواد الأخف", "Low-credit boost plan"),
+                bi(
+                        "تطلب علامات أعلى في المواد الأقل ساعات لأنها أسهل للتعويض غالبًا، وتخفف الضغط عن المواد الثقيلة.",
+                        "Requires higher marks in lower-credit courses because they are often easier to compensate with, reducing pressure on heavier courses."
+                ),
+                buildInverseCreditScores(validItems),
+                delta.multiply(new BigDecimal("1.05"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "HEAVY_COURSE_RELIEF",
+                bi("خطة تخفيف المواد الثقيلة", "Heavy-course relief plan"),
+                bi(
+                        "تخفض المطلوب قليلًا في المواد الأعلى ساعات، وتعوض الفرق في المواد الأخف حتى تكون الخطة أريح نفسيًا.",
+                        "Slightly lowers the requirement in higher-credit courses and compensates through lighter courses for a more comfortable plan."
+                ),
+                buildNegativeCreditScores(validItems),
+                delta.multiply(new BigDecimal("0.95"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "TOP_TWO_PUSH",
+                bi("خطة دفع مادتين أساسيتين", "Top-two push plan"),
+                bi(
+                        "تركز على أعلى مادتين بالساعات وتجعلهما محور الخطة، مع تخفيف باقي المواد قدر الإمكان.",
+                        "Focuses on the two highest-credit courses as the core of the plan while reducing pressure on the rest as much as possible."
+                ),
+                buildTopNCreditScores(validItems, 2),
+                delta.multiply(new BigDecimal("1.35"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "ONE_MAIN_COURSE_PUSH",
+                bi("خطة مادة رئيسية واحدة", "One-main-course push plan"),
+                bi(
+                        "ترفع المطلوب في مادة واحدة ذات تأثير عالٍ، وتبقي باقي المواد أقرب للحد المطلوب.",
+                        "Raises the requirement in one high-impact course while keeping the rest closer to the minimum required."
+                ),
+                buildTopNCreditScores(validItems, 1),
+                delta.multiply(new BigDecimal("1.55"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "FIRST_HALF_FOCUS",
+                bi("خطة إنجاز النصف الأول", "First-half focus plan"),
+                bi(
+                        "تضع الجهد الأكبر على أول نصف من المواد المتبقية حتى يبدأ الطالب بقوة ويخف الضغط لاحقًا.",
+                        "Places more effort on the first half of the remaining courses so the student starts strong and reduces pressure later."
+                ),
+                buildHalfScores(validItems, true),
+                delta.multiply(new BigDecimal("0.95"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "SECOND_HALF_RECOVERY",
+                bi("خطة التعويض في النصف الثاني", "Second-half recovery plan"),
+                bi(
+                        "تخفف البداية قليلًا وتضع التعويض الأكبر على النصف الثاني من المواد المتبقية.",
+                        "Makes the beginning slightly lighter and places more recovery effort on the second half of the remaining courses."
+                ),
+                buildHalfScores(validItems, false),
+                delta.multiply(new BigDecimal("0.95"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "ASCENDING_PLAN",
+                bi("خطة تصاعدية", "Ascending plan"),
+                bi(
+                        "تبدأ بعلامات أقرب للحد الأدنى، ثم ترفع المطلوب تدريجيًا في المواد اللاحقة.",
+                        "Starts closer to the minimum required and gradually increases the target in later courses."
+                ),
+                buildOrderScores(validItems, false),
+                delta.multiply(new BigDecimal("0.75"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "DESCENDING_PLAN",
+                bi("خطة تنازلية", "Descending plan"),
+                bi(
+                        "تبدأ بعلامات أعلى في البداية، ثم تخفف المطلوب تدريجيًا في المواد اللاحقة.",
+                        "Starts with higher targets at the beginning and gradually lowers the requirement in later courses."
+                ),
+                buildOrderScores(validItems, true),
+                delta.multiply(new BigDecimal("0.75"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "ALTERNATING_A",
+                bi("خطة متناوبة أ", "Alternating plan A"),
+                bi(
+                        "توزع المطلوب بالتناوب بين مادة أعلى ومادة أخف حتى لا تظهر كل العلامات بنفس الرقم.",
+                        "Alternates between higher and lighter requirements so the course marks do not all appear identical."
+                ),
+                buildRotatingScores(validItems, true),
+                delta.multiply(new BigDecimal("0.85"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "ALTERNATING_B",
+                bi("خطة متناوبة ب", "Alternating plan B"),
+                bi(
+                        "تعكس الخطة المتناوبة الأولى، فتخفف المواد التي كانت أعلى وترفع غيرها بشكل محسوب.",
+                        "Reverses the first alternating plan by easing the previously higher courses and raising others in a controlled way."
+                ),
+                buildRotatingScores(validItems, false),
+                delta.multiply(new BigDecimal("0.85"))
+        ));
+
+        addOptionIfUseful(options, buildFlatOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "CONFIDENT_TARGET",
+                bi("خطة هدف مطمئن", "Confident-target plan"),
+                bi(
+                        "تقترح هدفًا أعلى من المطلوب بدرجة بسيطة لكل المواد، مناسبة إذا بدك تضمن الوصول للهدف براحة.",
+                        "Suggests a slightly higher target in every course, useful when you want a comfortable chance of reaching the target."
+                ),
+                delta.multiply(new BigDecimal("0.60"))
+        ));
+
+        return options.stream()
+                .filter(Objects::nonNull)
+                .filter(WhatIfOptionDTO::isPossible)
+                .limit(12)
+                .toList();
+    }
+
+    private void addOptionIfUseful(List<WhatIfOptionDTO> options, WhatIfOptionDTO option) {
+        if (option == null || !option.isPossible()) {
+            return;
+        }
+
+        String signature = optionSignature(option);
+        boolean alreadyExists = options.stream()
+                .filter(Objects::nonNull)
+                .map(this::optionSignature)
+                .anyMatch(signature::equals);
+
+        if (!alreadyExists) {
+            options.add(option);
+        }
+    }
+
+    private String optionSignature(WhatIfOptionDTO option) {
+        if (option == null || option.getCourses() == null) {
+            return "";
+        }
+
+        return option.getCourses().stream()
+                .map(course -> nz(course.getRequiredValue()).setScale(1, RoundingMode.HALF_UP).toPlainString())
+                .collect(Collectors.joining("|"));
+    }
+
+    private WhatIfOptionDTO buildBalancedOption(
+            List<GradeCourseItem> items,
+            BigDecimal requiredAverage,
+            BigDecimal scaleMax
+    ) {
+        List<WhatIfRequiredCourseDTO> courses = items.stream()
+                .map(item -> WhatIfRequiredCourseDTO.builder()
+                        .itemId(item.getId())
+                        .courseName(item.getCourseNameSnapshot())
+                        .creditHours(nz(item.getCreditHoursSnapshot()))
+                        .requiredValue(clamp(requiredAverage, ZERO, scaleMax).setScale(2, RoundingMode.HALF_UP))
+                        .build())
+                .toList();
+
+        return WhatIfOptionDTO.builder()
+                .optionCode("BALANCED")
+                .title(bi("خطة متوازنة", "Balanced plan"))
+                .description(bi(
+                        "توزع العلامة المطلوبة بالتساوي تقريبًا على كل المواد المتبقية.",
+                        "Distributes the required mark almost equally across all remaining courses."
+                ))
+                .projectedAverage(weightedAverage(courses).setScale(2, RoundingMode.HALF_UP))
+                .possible(isOptionValid(courses, requiredAverage, scaleMax))
+                .courses(courses)
+                .build();
+    }
+
+    private WhatIfOptionDTO buildFlatOption(
+            List<GradeCourseItem> items,
+            BigDecimal requiredAverage,
+            BigDecimal scaleMax,
+            String optionCode,
+            String title,
+            String description,
+            BigDecimal bonus
+    ) {
+        BigDecimal value = clamp(requiredAverage.add(nz(bonus)), ZERO, scaleMax);
+
+        List<WhatIfRequiredCourseDTO> courses = items.stream()
+                .map(item -> WhatIfRequiredCourseDTO.builder()
+                        .itemId(item.getId())
+                        .courseName(item.getCourseNameSnapshot())
+                        .creditHours(nz(item.getCreditHoursSnapshot()))
+                        .requiredValue(value.setScale(2, RoundingMode.HALF_UP))
+                        .build())
+                .toList();
+
+        return WhatIfOptionDTO.builder()
+                .optionCode(optionCode)
+                .title(title)
+                .description(description)
+                .projectedAverage(weightedAverage(courses).setScale(2, RoundingMode.HALF_UP))
+                .possible(isOptionValid(courses, requiredAverage, scaleMax))
+                .courses(courses)
+                .build();
+    }
+
+    private WhatIfOptionDTO buildProfileOption(
+            List<GradeCourseItem> items,
+            BigDecimal requiredAverage,
+            BigDecimal scaleMax,
+            String optionCode,
+            String title,
+            String description,
+            List<BigDecimal> scores,
+            BigDecimal initialAmplitude
+    ) {
+        if (items == null || items.isEmpty() || scores == null || scores.size() != items.size()) {
+            return null;
+        }
+
+        List<WhatIfRequiredCourseDTO> courses = buildProfileCourses(
+                items,
+                requiredAverage,
+                scaleMax,
+                scores,
+                initialAmplitude
+        );
+
+        if (courses == null || courses.isEmpty()) {
+            return null;
+        }
+
+        return WhatIfOptionDTO.builder()
+                .optionCode(optionCode)
+                .title(title)
+                .description(description)
+                .projectedAverage(weightedAverage(courses).setScale(2, RoundingMode.HALF_UP))
+                .possible(isOptionValid(courses, requiredAverage, scaleMax))
+                .courses(courses)
+                .build();
+    }
+
+    private List<WhatIfRequiredCourseDTO> buildProfileCourses(
+            List<GradeCourseItem> items,
+            BigDecimal requiredAverage,
+            BigDecimal scaleMax,
+            List<BigDecimal> scores,
+            BigDecimal initialAmplitude
+    ) {
+        BigDecimal totalCredits = sumCredits(items);
+
+        if (totalCredits.compareTo(ZERO) <= 0) {
+            return List.of();
+        }
+
+        BigDecimal weightedScoreSum = ZERO;
+
+        for (int i = 0; i < items.size(); i++) {
+            weightedScoreSum = weightedScoreSum.add(
+                    nz(scores.get(i)).multiply(nz(items.get(i).getCreditHoursSnapshot()))
+            );
+        }
+
+        BigDecimal weightedScoreAverage = weightedScoreSum.divide(totalCredits, 8, RoundingMode.HALF_UP);
+        BigDecimal amplitude = nz(initialAmplitude);
+
+        for (int attempt = 0; attempt < 14; attempt++) {
+            List<WhatIfRequiredCourseDTO> courses = new ArrayList<>();
+            boolean insideScale = true;
+
+            for (int i = 0; i < items.size(); i++) {
+                GradeCourseItem item = items.get(i);
+                BigDecimal centeredScore = nz(scores.get(i)).subtract(weightedScoreAverage);
+                BigDecimal value = requiredAverage.add(centeredScore.multiply(amplitude));
+
+                if (value.compareTo(ZERO) < 0 || value.compareTo(scaleMax) > 0) {
+                    insideScale = false;
+                    break;
+                }
+
+                courses.add(WhatIfRequiredCourseDTO.builder()
+                        .itemId(item.getId())
+                        .courseName(item.getCourseNameSnapshot())
+                        .creditHours(nz(item.getCreditHoursSnapshot()))
+                        .requiredValue(value.setScale(2, RoundingMode.HALF_UP))
+                        .build());
+            }
+
+            if (insideScale && isOptionValid(courses, requiredAverage, scaleMax)) {
+                return courses;
+            }
+
+            amplitude = amplitude.multiply(new BigDecimal("0.65"));
+        }
+
+        return null;
+    }
+
+    private List<BigDecimal> buildCreditScores(List<GradeCourseItem> items) {
+        return items.stream()
+                .map(item -> nz(item.getCreditHoursSnapshot()))
+                .toList();
+    }
+
+    private List<BigDecimal> buildNegativeCreditScores(List<GradeCourseItem> items) {
+        return items.stream()
+                .map(item -> nz(item.getCreditHoursSnapshot()).negate())
+                .toList();
+    }
+
+    private List<BigDecimal> buildInverseCreditScores(List<GradeCourseItem> items) {
+        return items.stream()
+                .map(item -> {
+                    BigDecimal credits = nz(item.getCreditHoursSnapshot());
+                    if (credits.compareTo(ZERO) <= 0) {
+                        return ZERO;
+                    }
+
+                    return BigDecimal.ONE.divide(credits, 8, RoundingMode.HALF_UP);
+                })
+                .toList();
+    }
+
+    private List<BigDecimal> buildOrderScores(List<GradeCourseItem> items, boolean earlyFocus) {
+        List<BigDecimal> scores = new ArrayList<>();
+        int size = items.size();
+
+        for (int i = 0; i < size; i++) {
+            int value = earlyFocus ? size - i : i + 1;
+            scores.add(BigDecimal.valueOf(value));
+        }
+
+        return scores;
+    }
+
+    private List<BigDecimal> buildHalfScores(List<GradeCourseItem> items, boolean firstHalfFocus) {
+        List<BigDecimal> scores = new ArrayList<>();
+        int size = items.size();
+        int midpoint = Math.max(1, (int) Math.ceil(size / 2.0));
+
+        for (int i = 0; i < size; i++) {
+            boolean inFirstHalf = i < midpoint;
+            scores.add(inFirstHalf == firstHalfFocus ? new BigDecimal("1.60") : new BigDecimal("0.70"));
+        }
+
+        return scores;
+    }
+
+    private List<BigDecimal> buildTopNCreditScores(List<GradeCourseItem> items, int count) {
+        List<GradeCourseItem> topItems = items.stream()
+                .sorted((a, b) -> nz(b.getCreditHoursSnapshot()).compareTo(nz(a.getCreditHoursSnapshot())))
+                .limit(Math.max(1, count))
+                .toList();
+
+        return items.stream()
+                .map(item -> topItems.contains(item) ? new BigDecimal("2.00") : BigDecimal.ONE)
+                .toList();
+    }
+
+    private List<BigDecimal> buildRotatingScores(List<GradeCourseItem> items, boolean startHigh) {
+        List<BigDecimal> scores = new ArrayList<>();
+
+        for (int i = 0; i < items.size(); i++) {
+            boolean high = startHigh ? i % 2 == 0 : i % 2 != 0;
+            scores.add(high ? new BigDecimal("1.55") : new BigDecimal("0.65"));
+        }
+
+        return scores;
+    }
+
+    private boolean isOptionValid(
+            List<WhatIfRequiredCourseDTO> courses,
+            BigDecimal requiredAverage,
+            BigDecimal scaleMax
+    ) {
+        if (courses == null || courses.isEmpty()) {
+            return false;
+        }
+
+        boolean valuesInsideScale = courses.stream()
+                .allMatch(course ->
+                        nz(course.getRequiredValue()).compareTo(ZERO) >= 0
+                                && nz(course.getRequiredValue()).compareTo(scaleMax) <= 0
+                );
+
+        if (!valuesInsideScale) {
+            return false;
+        }
+
+        BigDecimal actualAverage = weightedAverage(courses);
+
+        return actualAverage.add(new BigDecimal("0.06")).compareTo(requiredAverage) >= 0
+                && actualAverage.compareTo(scaleMax) <= 0;
+    }
+
+    private BigDecimal weightedAverage(List<WhatIfRequiredCourseDTO> courses) {
+        if (courses == null || courses.isEmpty()) {
+            return ZERO;
+        }
+
+        BigDecimal totalCredits = courses.stream()
+                .map(course -> nz(course.getCreditHours()))
+                .reduce(ZERO, BigDecimal::add);
+
+        if (totalCredits.compareTo(ZERO) <= 0) {
+            return ZERO;
+        }
+
+        BigDecimal weightedSum = courses.stream()
+                .map(course -> nz(course.getRequiredValue()).multiply(nz(course.getCreditHours())))
+                .reduce(ZERO, BigDecimal::add);
+
+        return weightedSum.divide(totalCredits, 8, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal optionDelta(BigDecimal scaleMax) {
+        if (scaleMax.compareTo(new BigDecimal("10")) > 0) {
+            return new BigDecimal("4.00");
+        }
+
+        return new BigDecimal("0.20");
+    }
+
+    private BigDecimal clamp(BigDecimal value, BigDecimal min, BigDecimal max) {
+        BigDecimal safeValue = nz(value);
+
+        if (safeValue.compareTo(min) < 0) {
+            return min;
+        }
+
+        if (safeValue.compareTo(max) > 0) {
+            return max;
+        }
+
+        return safeValue;
     }
 
     private boolean isRemainingItem(GradeCourseItem item) {

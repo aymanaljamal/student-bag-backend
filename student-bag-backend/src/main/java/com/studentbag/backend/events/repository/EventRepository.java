@@ -16,38 +16,65 @@ import java.util.List;
 public interface EventRepository extends JpaRepository<Event, Long> {
 
     @Query("""
-    select e
-    from Event e
-    where e.startDateTime is not null
-      and e.startDateTime >= :from
-      and e.startDateTime < :to
-""")
+        SELECT e
+        FROM Event e
+        WHERE e.startDateTime IS NOT NULL
+          AND e.startDateTime >= :from
+          AND e.startDateTime < :to
+    """)
     List<Event> findEventsStartingBetween(
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to
     );
 
-    @Query("SELECT e FROM Event e WHERE " +
-            "(:type IS NULL OR e.eventType = :type) AND " +
-            "(:dept IS NULL OR e.department = :dept) AND " +
-            "(:loc IS NULL OR e.location LIKE %:loc%) AND " +
-            "(e.startDateTime >= :startDate) " +
-            "ORDER BY e.startDateTime ASC")
+    @Query("""
+        SELECT e
+        FROM Event e
+        WHERE (:type IS NULL OR e.eventType = :type)
+          AND (:dept IS NULL OR e.department = :dept)
+          AND (:loc IS NULL OR e.location LIKE %:loc%)
+          AND e.startDateTime >= :startDate
+        ORDER BY e.startDateTime ASC
+    """)
     Page<Event> findFilteredEvents(
             @Param("type") EventType type,
             @Param("dept") String dept,
             @Param("loc") String loc,
             @Param("startDate") LocalDateTime startDate,
-            Pageable pageable);
+            Pageable pageable
+    );
 
-    // FR-9.2 & FR-9.7: Find by institution for staff management
     List<Event> findAllByInstitutionId(Long institutionId);
 
-    // FR-9.9: Support Uni-Bot search by keyword
-    @Query("SELECT e FROM Event e WHERE LOWER(e.title) LIKE LOWER(concat('%', :query, '%')) " +
-            "OR LOWER(e.description) LIKE LOWER(concat('%', :query, '%'))")
+    @Query("""
+        SELECT e
+        FROM Event e
+        WHERE LOWER(e.title) LIKE LOWER(CONCAT('%', :query, '%'))
+           OR LOWER(e.description) LIKE LOWER(CONCAT('%', :query, '%'))
+    """)
     List<Event> searchByKeyword(@Param("query") String query);
 
-    // Find upcoming events for Smart Schedule reminders (FR-9.5)
-    List<Event> findAllByStartDateTimeBetween(LocalDateTime start, LocalDateTime end);
+    List<Event> findAllByStartDateTimeBetween(
+            LocalDateTime start,
+            LocalDateTime end
+    );
+
+    /*
+     * Used by AI:
+     * Returns all upcoming system events/opportunities, not only registered events.
+     *
+     * If your Event entity has isDeleted / cancelled / visible fields,
+     * add them inside this query.
+     */
+    @Query("""
+        SELECT DISTINCT e
+        FROM Event e
+        LEFT JOIN FETCH e.opportunity o
+        WHERE e.startDateTime IS NOT NULL
+          AND e.startDateTime >= :now
+        ORDER BY e.startDateTime ASC
+    """)
+    List<Event> findUpcomingVisibleEventsForAi(
+            @Param("now") LocalDateTime now
+    );
 }
