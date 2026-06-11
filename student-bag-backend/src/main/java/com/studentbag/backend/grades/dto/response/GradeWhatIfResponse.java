@@ -34,5 +34,8 @@ public class GradeWhatIfResponse {
     private List<WhatIfRequiredCourseDTO> requiredPerCourse = new ArrayList<>();
 
     @Builder.Default
+    private List<WhatIfOptionDTO> options = new ArrayList<>();
+
+    @Builder.Default
     private List<String> notes = new ArrayList<>();
 }

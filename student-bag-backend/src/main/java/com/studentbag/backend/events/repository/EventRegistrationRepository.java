@@ -21,20 +21,28 @@ public interface EventRegistrationRepository extends JpaRepository<EventRegistra
 
     List<EventRegistration> findAllByEventIdAndStatus(Long eventId, RegistrationStatus status);
 
-    long countByEventIdAndStatusIn(Long eventId, List<RegistrationStatus> activeStatuses);
+    long countByEventIdAndStatusIn(
+            Long eventId,
+            List<RegistrationStatus> activeStatuses
+    );
+
     @Query("""
-    SELECT er
-    FROM EventRegistration er
-    JOIN FETCH er.event e
-    LEFT JOIN FETCH e.opportunity o
-    WHERE er.student.id = :studentId
-      AND er.status <> com.studentbag.backend.domain.enums.courses.RegistrationStatus.CANCELLED
-      AND e.startDateTime >= :now
-    ORDER BY e.startDateTime ASC
-""")
+        SELECT er
+        FROM EventRegistration er
+        JOIN FETCH er.event e
+        LEFT JOIN FETCH e.opportunity o
+        WHERE er.student.id = :studentId
+          AND er.status IN (
+              com.studentbag.backend.domain.enums.courses.RegistrationStatus.REGISTERED,
+              com.studentbag.backend.domain.enums.courses.RegistrationStatus.CHECKED_IN
+          )
+          AND e.startDateTime >= :now
+        ORDER BY e.startDateTime ASC
+    """)
     List<EventRegistration> findUpcomingRegisteredEventsForAi(
             Long studentId,
             LocalDateTime now
     );
+
     void deleteByEventId(Long eventId);
 }

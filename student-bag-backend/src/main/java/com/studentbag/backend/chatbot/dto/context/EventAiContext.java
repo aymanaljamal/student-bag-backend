@@ -28,6 +28,22 @@ public class EventAiContext {
     private Boolean requiresRegistration;
     private Boolean isOpportunity;
 
+    /*
+     * Student-specific registration information.
+     */
+    private Boolean registered;
+    private String registrationStatus;
+
+    /*
+     * General registration information.
+     */
+    private Integer maxParticipants;
+    private Long registeredCount;
+    private Boolean registrationOpen;
+
+    /*
+     * Opportunity fields.
+     */
     private String companyName;
     private String roleTitle;
     private String field;
