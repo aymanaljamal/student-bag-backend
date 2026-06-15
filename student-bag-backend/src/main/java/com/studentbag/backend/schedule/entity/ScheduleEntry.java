@@ -1,6 +1,7 @@
 package com.studentbag.backend.schedule.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
+import com.studentbag.backend.courses.entity.Course;
 import com.studentbag.backend.courses.entity.CourseSection;
 import com.studentbag.backend.domain.enums.schedule.ScheduleSourceType;
 import com.studentbag.backend.events.entity.Event;
@@ -13,7 +14,8 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "schedule_entries")
-@Getter @Setter
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
@@ -36,6 +38,13 @@ public class ScheduleEntry extends BaseEntity {
     private CourseSection courseSection;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "manual_course_id")
+    private Course manualCourse;
+
+    @Column(name = "manual_section_number")
+    private String manualSectionNumber;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "event_id")
     private Event event;
 
@@ -43,7 +52,12 @@ public class ScheduleEntry extends BaseEntity {
     private String title;
 
     private String description;
+
     private String location;
+
+    private String room;
+
+    private String building;
 
     @Column(name = "start_date_time", nullable = false)
     private LocalDateTime startDateTime;
@@ -63,7 +77,10 @@ public class ScheduleEntry extends BaseEntity {
     private Boolean isLocked = false;
 
     public boolean conflictsWith(ScheduleEntry other) {
-        if (Boolean.TRUE.equals(this.isAllDay) || Boolean.TRUE.equals(other.isAllDay)) return false;
+        if (Boolean.TRUE.equals(this.isAllDay) || Boolean.TRUE.equals(other.isAllDay)) {
+            return false;
+        }
+
         return this.startDateTime.isBefore(other.endDateTime)
                 && other.startDateTime.isBefore(this.endDateTime);
     }

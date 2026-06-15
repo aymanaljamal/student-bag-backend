@@ -26,6 +26,7 @@ public class ScheduleMapper {
                 .id(schedule.getId())
                 .termId(schedule.getTerm().getId())
                 .termName(schedule.getTerm().getName())
+                .name(schedule.getName())
                 .status(schedule.getStatus())
                 .entries(schedule.getEntries().stream()
                         .map(this::toEntryDTO)
@@ -87,6 +88,7 @@ public class ScheduleMapper {
 
         return StudentScheduleViewerResponseDTO.builder()
                 .id(schedule.getId())
+                .name(schedule.getName())
                 .termId(schedule.getTerm().getId())
                 .termName(schedule.getTerm().getName())
                 .status(schedule.getStatus())
@@ -95,7 +97,6 @@ public class ScheduleMapper {
                         .collect(Collectors.toList()))
                 .build();
     }
-
     public ScheduleViewerEntryResponseDTO toEntryViewerDTO(ScheduleEntry entry) {
         if (entry == null) return null;
 

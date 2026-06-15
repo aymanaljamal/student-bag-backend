@@ -27,7 +27,8 @@ public class StudentSchedule extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "term_id", nullable = false)
     private Term term;
-
+    @Column(name = "name")
+    private String name;
     @Enumerated(EnumType.STRING)
     @Builder.Default
     @Column(nullable = false)
