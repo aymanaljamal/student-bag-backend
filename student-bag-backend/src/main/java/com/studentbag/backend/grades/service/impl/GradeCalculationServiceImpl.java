@@ -29,8 +29,10 @@ import com.studentbag.backend.grades.repository.GradeCalculationRepository;
 import com.studentbag.backend.grades.repository.GradeCourseItemRepository;
 import com.studentbag.backend.grades.service.GradeCalculationService;
 import com.studentbag.backend.grades.service.GradeCalculatorService;
+import com.studentbag.backend.schedule.entity.CourseRating;
 import com.studentbag.backend.schedule.entity.ScheduleEntry;
 import com.studentbag.backend.schedule.entity.StudentSchedule;
+import com.studentbag.backend.schedule.repository.CourseRatingRepository;
 import com.studentbag.backend.schedule.repository.StudentScheduleRepository;
 import com.studentbag.backend.student.entity.Student;
 import com.studentbag.backend.student.repository.StudentRepository;
@@ -38,6 +40,7 @@ import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -56,6 +59,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
     private static final BigDecimal DEFAULT_GPA_SCALE = new BigDecimal("4.00");
+    private static final BigDecimal NEUTRAL_DIFFICULTY = new BigDecimal("3");
+    private static final int MAX_WHAT_IF_OPTIONS = 8;
 
     private final GradeCalculationRepository calculationRepository;
     private final GradeCourseItemRepository itemRepository;
@@ -66,6 +71,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     private final StudentScheduleRepository scheduleRepository;
     private final CourseRepository courseRepository;
     private final CourseSectionRepository courseSectionRepository;
+    private final CourseRatingRepository courseRatingRepository;
 
     @Override
     @Transactional
@@ -225,12 +231,6 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     public GradeCalculationResponse recalculate(Long calculationId, Long studentId) {
         GradeCalculation calculation = findCalculation(calculationId, studentId);
 
-        /*
-         * ملاحظة:
-         * لا نمنع recalculate حتى لو الحساب locked.
-         * لأن إعادة الحساب لا تعتبر تعديل يدوي من الطالب،
-         * بل تحديث للنتائج بناءً على البيانات الموجودة.
-         */
         normalizeOrderIndexes(calculation);
         calculatorService.recalculate(calculation);
         calculationRepository.save(calculation);
@@ -695,10 +695,13 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .filter(this::isRemainingItem)
                 .toList();
 
+        Map<Long, BigDecimal> difficultyByCourseId = loadStudentDifficultyMap(calculation);
+
         List<WhatIfOptionDTO> options = buildWhatIfOptions(
                 remainingItems,
                 requiredAverageOnRemaining,
-                scaleMax
+                scaleMax,
+                difficultyByCourseId
         );
 
         List<WhatIfRequiredCourseDTO> perCourse = options.isEmpty()
@@ -719,8 +722,12 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                     "The target is possible if you score about " + fmt(requiredAverageOnRemaining) + " on average in the remaining courses."
             ));
             notes.add(bi(
-                    "المواد ذات الساعات الأعلى تحتاج اهتمامًا أكبر، لأن نفس العلامة فيها تؤثر أكثر على النتيجة النهائية.",
-                    "Higher-credit courses need more attention because the same mark in them has a bigger effect on the final result."
+                    "الخطط المقترحة ليست مجرد رقم واحد مكرر؛ كل خطة توزع الجهد بطريقة مختلفة حسب الساعات وترتيب المواد ومستوى الضغط.",
+                    "The suggested plans are not just one repeated number; each plan distributes effort differently based on credits, course order, and pressure level."
+            ));
+            notes.add(bi(
+                    "إذا كانت تقييمات صعوبة المواد متوفرة، يتم استخدامها لتحسين توزيع الجهد. وإذا لم تكن متوفرة، يتم اعتبار المادة بدرجة صعوبة محايدة بدون التأثير على التحليل.",
+                    "If course difficulty ratings are available, they are used to improve effort distribution. If not available, the course is treated as neutral without affecting the analysis."
             ));
         } else {
             notes.add(bi(
@@ -746,8 +753,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .totalCredits(totalCredits)
                 .message(possible
                         ? bi(
-                        "يمكنك الوصول إلى الهدف إذا حققت المتوسط المطلوب في المواد المتبقية.",
-                        "You can reach the target if you achieve the required average in the remaining courses."
+                        "يمكنك الوصول إلى الهدف إذا حققت المتوسط المطلوب في المواد المتبقية. اختر الخطة الأنسب حسب قدرتك: متوازنة، آمنة، تراعي صعوبة المواد، تركيز على المواد الثقيلة، أو تعويض تدريجي.",
+                        "You can reach the target if you achieve the required average in the remaining courses. Choose the plan that fits you best: balanced, safe, difficulty-aware, high-credit focus, or gradual recovery."
                 )
                         : bi(
                         "هذا الهدف غير ممكن في هذا الفصل فقط.",
@@ -866,10 +873,13 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .filter(this::isRemainingItem)
                 .toList();
 
+        Map<Long, BigDecimal> difficultyByCourseId = loadStudentDifficultyMap(calculation);
+
         List<WhatIfOptionDTO> options = buildWhatIfOptions(
                 remainingItems,
                 requiredAverageOnRemaining,
-                scaleMax
+                scaleMax,
+                difficultyByCourseId
         );
 
         List<WhatIfRequiredCourseDTO> perCourse = options.isEmpty()
@@ -909,6 +919,10 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                             + fmt(requiredSemesterValue) + " and an average of about "
                             + fmt(requiredAverageOnRemaining) + " in the remaining courses."
             ));
+            notes.add(bi(
+                    "تقييم صعوبة المادة يستخدم فقط لتحسين توزيع الخطط، وليس لتحديد إمكانية الوصول للهدف.",
+                    "Course difficulty rating is used only to improve plan distribution, not to decide whether the target is reachable."
+            ));
         } else {
             notes.add(bi(
                     "أعلى تراكمي ممكن تقريبًا بعد هذا الفصل هو " + fmt(maxPossibleCumulative) + ".",
@@ -931,8 +945,8 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .totalCredits(semesterCredits)
                 .message(possible
                         ? bi(
-                        "الوصول إلى الهدف التراكمي ممكن إذا حققت المعدل المطلوب هذا الفصل.",
-                        "Reaching the cumulative target is possible if you achieve the required semester result."
+                        "الوصول إلى الهدف التراكمي ممكن إذا حققت المعدل المطلوب هذا الفصل. تم تجهيز أكثر من خطة حتى تختار توزيع الجهد الأنسب لك.",
+                        "Reaching the cumulative target is possible if you achieve the required semester result. Several plans were prepared so you can choose the most suitable effort distribution."
                 )
                         : bi(
                         "الهدف التراكمي غير ممكن من خلال هذا الفصل فقط.",
@@ -944,11 +958,11 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .build();
     }
 
-
     private List<WhatIfOptionDTO> buildWhatIfOptions(
             List<GradeCourseItem> remainingItems,
             BigDecimal requiredAverage,
-            BigDecimal scaleMax
+            BigDecimal scaleMax,
+            Map<Long, BigDecimal> difficultyByCourseId
     ) {
         if (remainingItems == null || remainingItems.isEmpty()) {
             return List.of();
@@ -981,40 +995,54 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 requiredAverage,
                 scaleMax,
                 "SAFE_MARGIN",
-                bi("خطة هامش الأمان", "Safety-margin plan"),
+                bi("خطة آمنة بهامش إضافي", "Safe margin plan"),
                 bi(
-                        "تضع هدفًا أعلى قليلًا من الحد الأدنى المطلوب حتى لا تكون الخطة حساسة لأي نقص بسيط.",
-                        "Sets a slightly higher target than the minimum required so the plan is not too sensitive to small drops."
+                        "تعطي كل مادة علامة أعلى قليلًا من الحد الأدنى المطلوب. مناسبة إذا بدك تقلل خطر النزول البسيط في أي مادة.",
+                        "Gives every course a slightly higher mark than the minimum required. Useful when you want to reduce the risk of a small drop in any course."
                 ),
-                delta.multiply(new BigDecimal("0.35"))
+                delta.multiply(new BigDecimal("0.45"))
         ));
 
         addOptionIfUseful(options, buildProfileOption(
                 validItems,
                 requiredAverage,
                 scaleMax,
-                "HIGH_CREDIT_FOCUS",
-                bi("خطة التركيز على المواد الأعلى ساعات", "High-credit focus plan"),
+                "DIFFICULTY_AWARE",
+                bi("خطة تراعي صعوبة المواد", "Difficulty-aware plan"),
                 bi(
-                        "ترفع المطلوب في المواد الأعلى ساعات لأنها الأكثر تأثيرًا على المعدل، وتخفف قليلًا عن المواد الأقل ساعات.",
-                        "Raises the requirement in higher-credit courses because they affect the average most, while slightly reducing pressure on lower-credit courses."
+                        "تخفف الضغط عن المواد الأعلى صعوبة، وتعوض بشكل محسوب في المواد الأسهل أو المواد غير المصنفة. إذا لم يكن تقييم الصعوبة موجودًا، تعتبر المادة محايدة.",
+                        "Reduces pressure on higher-difficulty courses and compensates in easier or unrated courses. If difficulty rating is missing, the course is treated as neutral."
                 ),
-                buildCreditScores(validItems),
-                delta.multiply(new BigDecimal("1.10"))
+                buildDifficultyAwareScores(validItems, difficultyByCourseId),
+                delta.multiply(new BigDecimal("1.25"))
         ));
 
         addOptionIfUseful(options, buildProfileOption(
                 validItems,
                 requiredAverage,
                 scaleMax,
-                "LOW_CREDIT_BOOST",
-                bi("خطة رفع المواد الأخف", "Low-credit boost plan"),
+                "HIGH_CREDIT_PRIORITY",
+                bi("خطة المواد الأعلى ساعات", "High-credit priority plan"),
                 bi(
-                        "تطلب علامات أعلى في المواد الأقل ساعات لأنها أسهل للتعويض غالبًا، وتخفف الضغط عن المواد الثقيلة.",
-                        "Requires higher marks in lower-credit courses because they are often easier to compensate with, reducing pressure on heavier courses."
+                        "ترفع المطلوب في المواد الأعلى ساعات لأنها تؤثر أكثر على المعدل، وتخفف قليلًا عن المواد الأقل ساعات.",
+                        "Raises targets in higher-credit courses because they affect the average more, while slightly reducing pressure on lower-credit courses."
                 ),
-                buildInverseCreditScores(validItems),
-                delta.multiply(new BigDecimal("1.05"))
+                buildCreditAndOrderScores(validItems, true),
+                delta.multiply(new BigDecimal("1.30"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "LIGHT_COURSE_COMPENSATION",
+                bi("خطة التعويض بالمواد الأخف", "Light-course compensation plan"),
+                bi(
+                        "تجعل المواد الأقل ساعات مجالًا للتعويض بعلامات أعلى، وتخفف الضغط عن المواد الثقيلة.",
+                        "Uses lower-credit courses as a compensation area with higher targets, while reducing pressure on heavier courses."
+                ),
+                buildLightCourseCompensationScores(validItems),
+                delta.multiply(new BigDecimal("1.20"))
         ));
 
         addOptionIfUseful(options, buildProfileOption(
@@ -1022,40 +1050,26 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 requiredAverage,
                 scaleMax,
                 "HEAVY_COURSE_RELIEF",
-                bi("خطة تخفيف المواد الثقيلة", "Heavy-course relief plan"),
+                bi("خطة تخفيف ضغط المواد الثقيلة", "Heavy-course relief plan"),
                 bi(
-                        "تخفض المطلوب قليلًا في المواد الأعلى ساعات، وتعوض الفرق في المواد الأخف حتى تكون الخطة أريح نفسيًا.",
-                        "Slightly lowers the requirement in higher-credit courses and compensates through lighter courses for a more comfortable plan."
+                        "تخفض المطلوب في المواد الأعلى ساعات بشكل محسوب، وتعوض الفرق في المواد الأقل ساعات حتى تكون الخطة أريح.",
+                        "Lowers the requirement in higher-credit courses in a controlled way and compensates through lower-credit courses for a more comfortable plan."
                 ),
-                buildNegativeCreditScores(validItems),
-                delta.multiply(new BigDecimal("0.95"))
+                buildNegativeCreditAndOrderScores(validItems),
+                delta.multiply(new BigDecimal("1.05"))
         ));
 
         addOptionIfUseful(options, buildProfileOption(
                 validItems,
                 requiredAverage,
                 scaleMax,
-                "TOP_TWO_PUSH",
-                bi("خطة دفع مادتين أساسيتين", "Top-two push plan"),
+                "TWO_MAIN_COURSES_PUSH",
+                bi("خطة دفع مادتين أساسيتين", "Two-main-courses push plan"),
                 bi(
-                        "تركز على أعلى مادتين بالساعات وتجعلهما محور الخطة، مع تخفيف باقي المواد قدر الإمكان.",
-                        "Focuses on the two highest-credit courses as the core of the plan while reducing pressure on the rest as much as possible."
+                        "تركز على أعلى مادتين تأثيرًا وتجعل علاماتهما أعلى، مع إبقاء باقي المواد قريبة من المطلوب.",
+                        "Focuses on the two highest-impact courses by giving them higher targets while keeping the rest closer to the required level."
                 ),
                 buildTopNCreditScores(validItems, 2),
-                delta.multiply(new BigDecimal("1.35"))
-        ));
-
-        addOptionIfUseful(options, buildProfileOption(
-                validItems,
-                requiredAverage,
-                scaleMax,
-                "ONE_MAIN_COURSE_PUSH",
-                bi("خطة مادة رئيسية واحدة", "One-main-course push plan"),
-                bi(
-                        "ترفع المطلوب في مادة واحدة ذات تأثير عالٍ، وتبقي باقي المواد أقرب للحد المطلوب.",
-                        "Raises the requirement in one high-impact course while keeping the rest closer to the minimum required."
-                ),
-                buildTopNCreditScores(validItems, 1),
                 delta.multiply(new BigDecimal("1.55"))
         ));
 
@@ -1063,27 +1077,55 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 validItems,
                 requiredAverage,
                 scaleMax,
-                "FIRST_HALF_FOCUS",
-                bi("خطة إنجاز النصف الأول", "First-half focus plan"),
+                "ONE_KEY_COURSE_PUSH",
+                bi("خطة مادة مفتاحية واحدة", "One key-course push plan"),
                 bi(
-                        "تضع الجهد الأكبر على أول نصف من المواد المتبقية حتى يبدأ الطالب بقوة ويخف الضغط لاحقًا.",
-                        "Places more effort on the first half of the remaining courses so the student starts strong and reduces pressure later."
+                        "تختار مادة واحدة ذات تأثير عالٍ وترفع المطلوب فيها أكثر، حتى تساعد باقي المواد تبقى أهدأ.",
+                        "Chooses one high-impact course and raises its target more, helping the remaining courses stay lighter."
+                ),
+                buildTopNCreditScores(validItems, 1),
+                delta.multiply(new BigDecimal("1.70"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "STRONG_START",
+                bi("خطة بداية قوية", "Strong-start plan"),
+                bi(
+                        "ترفع المطلوب في أول نصف من المواد المتبقية، حتى يبدأ الطالب بقوة ويخف الضغط لاحقًا.",
+                        "Raises targets in the first half of the remaining courses so the student starts strong and reduces pressure later."
                 ),
                 buildHalfScores(validItems, true),
-                delta.multiply(new BigDecimal("0.95"))
+                delta.multiply(new BigDecimal("1.10"))
         ));
 
         addOptionIfUseful(options, buildProfileOption(
                 validItems,
                 requiredAverage,
                 scaleMax,
-                "SECOND_HALF_RECOVERY",
-                bi("خطة التعويض في النصف الثاني", "Second-half recovery plan"),
+                "LATE_RECOVERY",
+                bi("خطة تعويض متأخر", "Late-recovery plan"),
                 bi(
-                        "تخفف البداية قليلًا وتضع التعويض الأكبر على النصف الثاني من المواد المتبقية.",
-                        "Makes the beginning slightly lighter and places more recovery effort on the second half of the remaining courses."
+                        "تخفف بداية الخطة قليلًا، ثم ترفع المطلوب في النصف الثاني من المواد للتعويض التدريجي.",
+                        "Makes the beginning slightly lighter, then raises targets in the second half for gradual recovery."
                 ),
                 buildHalfScores(validItems, false),
+                delta.multiply(new BigDecimal("1.10"))
+        ));
+
+        addOptionIfUseful(options, buildProfileOption(
+                validItems,
+                requiredAverage,
+                scaleMax,
+                "ASCENDING_EFFORT",
+                bi("خطة جهد تصاعدي", "Ascending-effort plan"),
+                bi(
+                        "تبدأ بعلامات أقرب للحد الأدنى، ثم ترفع المطلوب تدريجيًا في المواد اللاحقة.",
+                        "Starts closer to the minimum required and gradually increases targets in later courses."
+                ),
+                buildOrderScores(validItems, false),
                 delta.multiply(new BigDecimal("0.95"))
         ));
 
@@ -1091,75 +1133,20 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 validItems,
                 requiredAverage,
                 scaleMax,
-                "ASCENDING_PLAN",
-                bi("خطة تصاعدية", "Ascending plan"),
+                "ALTERNATING_LOAD",
+                bi("خطة توزيع متناوب", "Alternating-load plan"),
                 bi(
-                        "تبدأ بعلامات أقرب للحد الأدنى، ثم ترفع المطلوب تدريجيًا في المواد اللاحقة.",
-                        "Starts closer to the minimum required and gradually increases the target in later courses."
-                ),
-                buildOrderScores(validItems, false),
-                delta.multiply(new BigDecimal("0.75"))
-        ));
-
-        addOptionIfUseful(options, buildProfileOption(
-                validItems,
-                requiredAverage,
-                scaleMax,
-                "DESCENDING_PLAN",
-                bi("خطة تنازلية", "Descending plan"),
-                bi(
-                        "تبدأ بعلامات أعلى في البداية، ثم تخفف المطلوب تدريجيًا في المواد اللاحقة.",
-                        "Starts with higher targets at the beginning and gradually lowers the requirement in later courses."
-                ),
-                buildOrderScores(validItems, true),
-                delta.multiply(new BigDecimal("0.75"))
-        ));
-
-        addOptionIfUseful(options, buildProfileOption(
-                validItems,
-                requiredAverage,
-                scaleMax,
-                "ALTERNATING_A",
-                bi("خطة متناوبة أ", "Alternating plan A"),
-                bi(
-                        "توزع المطلوب بالتناوب بين مادة أعلى ومادة أخف حتى لا تظهر كل العلامات بنفس الرقم.",
-                        "Alternates between higher and lighter requirements so the course marks do not all appear identical."
+                        "توزع الضغط بالتناوب بين مادة أعلى ومادة أخف، حتى لا تظهر كل العلامات بنفس الرقم.",
+                        "Alternates pressure between higher and lighter course targets so the marks do not all look identical."
                 ),
                 buildRotatingScores(validItems, true),
-                delta.multiply(new BigDecimal("0.85"))
-        ));
-
-        addOptionIfUseful(options, buildProfileOption(
-                validItems,
-                requiredAverage,
-                scaleMax,
-                "ALTERNATING_B",
-                bi("خطة متناوبة ب", "Alternating plan B"),
-                bi(
-                        "تعكس الخطة المتناوبة الأولى، فتخفف المواد التي كانت أعلى وترفع غيرها بشكل محسوب.",
-                        "Reverses the first alternating plan by easing the previously higher courses and raising others in a controlled way."
-                ),
-                buildRotatingScores(validItems, false),
-                delta.multiply(new BigDecimal("0.85"))
-        ));
-
-        addOptionIfUseful(options, buildFlatOption(
-                validItems,
-                requiredAverage,
-                scaleMax,
-                "CONFIDENT_TARGET",
-                bi("خطة هدف مطمئن", "Confident-target plan"),
-                bi(
-                        "تقترح هدفًا أعلى من المطلوب بدرجة بسيطة لكل المواد، مناسبة إذا بدك تضمن الوصول للهدف براحة.",
-                        "Suggests a slightly higher target in every course, useful when you want a comfortable chance of reaching the target."
-                ),
-                delta.multiply(new BigDecimal("0.60"))
+                delta.multiply(new BigDecimal("1.00"))
         ));
 
         return options.stream()
                 .filter(Objects::nonNull)
                 .filter(WhatIfOptionDTO::isPossible)
-                .limit(12)
+                .limit(MAX_WHAT_IF_OPTIONS)
                 .toList();
     }
 
@@ -1185,7 +1172,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         }
 
         return option.getCourses().stream()
-                .map(course -> nz(course.getRequiredValue()).setScale(1, RoundingMode.HALF_UP).toPlainString())
+                .map(course -> nz(course.getRequiredValue()).setScale(2, RoundingMode.HALF_UP).toPlainString())
                 .collect(Collectors.joining("|"));
     }
 
@@ -1204,11 +1191,11 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .toList();
 
         return WhatIfOptionDTO.builder()
-                .optionCode("BALANCED")
-                .title(bi("خطة متوازنة", "Balanced plan"))
+                .optionCode("BALANCED_MINIMUM")
+                .title(bi("خطة الحد الأدنى المتوازن", "Balanced minimum plan"))
                 .description(bi(
-                        "توزع العلامة المطلوبة بالتساوي تقريبًا على كل المواد المتبقية.",
-                        "Distributes the required mark almost equally across all remaining courses."
+                        "تعطي كل مادة تقريبًا نفس العلامة المطلوبة. هذه أبسط خطة وتوضح الحد الأدنى اللازم للوصول للهدف.",
+                        "Gives every course almost the same required mark. This is the simplest plan and shows the minimum needed to reach the target."
                 ))
                 .projectedAverage(weightedAverage(courses).setScale(2, RoundingMode.HALF_UP))
                 .possible(isOptionValid(courses, requiredAverage, scaleMax))
@@ -1306,7 +1293,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         BigDecimal weightedScoreAverage = weightedScoreSum.divide(totalCredits, 8, RoundingMode.HALF_UP);
         BigDecimal amplitude = nz(initialAmplitude);
 
-        for (int attempt = 0; attempt < 14; attempt++) {
+        for (int attempt = 0; attempt < 16; attempt++) {
             List<WhatIfRequiredCourseDTO> courses = new ArrayList<>();
             boolean insideScale = true;
 
@@ -1332,7 +1319,7 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 return courses;
             }
 
-            amplitude = amplitude.multiply(new BigDecimal("0.65"));
+            amplitude = amplitude.multiply(new BigDecimal("0.70"));
         }
 
         return null;
@@ -1347,6 +1334,86 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
     private List<BigDecimal> buildNegativeCreditScores(List<GradeCourseItem> items) {
         return items.stream()
                 .map(item -> nz(item.getCreditHoursSnapshot()).negate())
+                .toList();
+    }
+
+    private List<BigDecimal> buildCreditAndOrderScores(List<GradeCourseItem> items, boolean highCreditPriority) {
+        int size = Math.max(1, items.size());
+        List<BigDecimal> scores = new ArrayList<>();
+
+        for (int i = 0; i < items.size(); i++) {
+            BigDecimal creditScore = nz(items.get(i).getCreditHoursSnapshot());
+            BigDecimal orderScore = BigDecimal.valueOf(size - i).divide(BigDecimal.valueOf(size), 8, RoundingMode.HALF_UP);
+
+            BigDecimal mixed = highCreditPriority
+                    ? creditScore.add(orderScore.multiply(new BigDecimal("0.35")))
+                    : creditScore.negate().add(orderScore.multiply(new BigDecimal("0.35")));
+
+            scores.add(mixed);
+        }
+
+        return scores;
+    }
+
+    private List<BigDecimal> buildNegativeCreditAndOrderScores(List<GradeCourseItem> items) {
+        int size = Math.max(1, items.size());
+        List<BigDecimal> scores = new ArrayList<>();
+
+        for (int i = 0; i < items.size(); i++) {
+            BigDecimal creditScore = nz(items.get(i).getCreditHoursSnapshot()).negate();
+            BigDecimal orderScore = BigDecimal.valueOf(i + 1).divide(BigDecimal.valueOf(size), 8, RoundingMode.HALF_UP);
+            scores.add(creditScore.add(orderScore.multiply(new BigDecimal("0.25"))));
+        }
+
+        return scores;
+    }
+
+    private List<BigDecimal> buildLightCourseCompensationScores(List<GradeCourseItem> items) {
+        int size = Math.max(1, items.size());
+        List<BigDecimal> scores = new ArrayList<>();
+
+        for (int i = 0; i < items.size(); i++) {
+            BigDecimal credits = nz(items.get(i).getCreditHoursSnapshot());
+
+            BigDecimal inverseCredit = credits.compareTo(ZERO) <= 0
+                    ? ZERO
+                    : BigDecimal.ONE.divide(credits, 8, RoundingMode.HALF_UP);
+
+            BigDecimal orderVariation = BigDecimal.valueOf((i % 2 == 0) ? 1 : -1)
+                    .multiply(new BigDecimal("0.20"));
+
+            BigDecimal position = BigDecimal.valueOf(i + 1)
+                    .divide(BigDecimal.valueOf(size), 8, RoundingMode.HALF_UP)
+                    .multiply(new BigDecimal("0.15"));
+
+            scores.add(inverseCredit.add(orderVariation).add(position));
+        }
+
+        return scores;
+    }
+
+    private List<BigDecimal> buildDifficultyAwareScores(
+            List<GradeCourseItem> items,
+            Map<Long, BigDecimal> difficultyByCourseId
+    ) {
+        return items.stream()
+                .map(item -> {
+                    BigDecimal difficulty = difficultyOf(item, difficultyByCourseId);
+
+                    /*
+                     * Difficulty scale:
+                     * 1 = easy
+                     * 3 = neutral
+                     * 5 = hard
+                     *
+                     * Higher score inside buildProfileCourses means higher required target.
+                     * So we reverse difficulty:
+                     * Easy course gets higher target.
+                     * Hard course gets lower target.
+                     * Unrated course is neutral.
+                     */
+                    return new BigDecimal("6").subtract(difficulty);
+                })
                 .toList();
     }
 
@@ -1382,7 +1449,12 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
         for (int i = 0; i < size; i++) {
             boolean inFirstHalf = i < midpoint;
-            scores.add(inFirstHalf == firstHalfFocus ? new BigDecimal("1.60") : new BigDecimal("0.70"));
+            BigDecimal base = inFirstHalf == firstHalfFocus ? new BigDecimal("1.85") : new BigDecimal("0.65");
+            BigDecimal smallVariation = BigDecimal.valueOf(i + 1)
+                    .divide(BigDecimal.valueOf(Math.max(1, size)), 8, RoundingMode.HALF_UP)
+                    .multiply(new BigDecimal("0.20"));
+
+            scores.add(base.add(smallVariation));
         }
 
         return scores;
@@ -1394,9 +1466,20 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
                 .limit(Math.max(1, count))
                 .toList();
 
-        return items.stream()
-                .map(item -> topItems.contains(item) ? new BigDecimal("2.00") : BigDecimal.ONE)
-                .toList();
+        int size = Math.max(1, items.size());
+        List<BigDecimal> scores = new ArrayList<>();
+
+        for (int i = 0; i < items.size(); i++) {
+            GradeCourseItem item = items.get(i);
+            BigDecimal base = topItems.contains(item) ? new BigDecimal("2.25") : new BigDecimal("0.85");
+            BigDecimal orderVariation = BigDecimal.valueOf(size - i)
+                    .divide(BigDecimal.valueOf(size), 8, RoundingMode.HALF_UP)
+                    .multiply(new BigDecimal("0.18"));
+
+            scores.add(base.add(orderVariation));
+        }
+
+        return scores;
     }
 
     private List<BigDecimal> buildRotatingScores(List<GradeCourseItem> items, boolean startHigh) {
@@ -1404,7 +1487,9 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
         for (int i = 0; i < items.size(); i++) {
             boolean high = startHigh ? i % 2 == 0 : i % 2 != 0;
-            scores.add(high ? new BigDecimal("1.55") : new BigDecimal("0.65"));
+            BigDecimal base = high ? new BigDecimal("1.75") : new BigDecimal("0.60");
+            BigDecimal creditAdjustment = nz(items.get(i).getCreditHoursSnapshot()).multiply(new BigDecimal("0.08"));
+            scores.add(base.add(creditAdjustment));
         }
 
         return scores;
@@ -1457,10 +1542,10 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
 
     private BigDecimal optionDelta(BigDecimal scaleMax) {
         if (scaleMax.compareTo(new BigDecimal("10")) > 0) {
-            return new BigDecimal("4.00");
+            return new BigDecimal("6.00");
         }
 
-        return new BigDecimal("0.20");
+        return new BigDecimal("0.32");
     }
 
     private BigDecimal clamp(BigDecimal value, BigDecimal min, BigDecimal max) {
@@ -1475,6 +1560,47 @@ public class GradeCalculationServiceImpl implements GradeCalculationService {
         }
 
         return safeValue;
+    }
+
+    private Map<Long, BigDecimal> loadStudentDifficultyMap(GradeCalculation calculation) {
+        if (calculation == null
+                || calculation.getStudent() == null
+                || calculation.getStudent().getId() == null) {
+            return Map.of();
+        }
+
+        return courseRatingRepository.findByStudentId(calculation.getStudent().getId())
+                .stream()
+                .filter(Objects::nonNull)
+                .filter(rating -> rating.getCourse() != null)
+                .filter(rating -> rating.getCourse().getId() != null)
+                .filter(rating -> rating.getDifficultyRating() != null)
+                .collect(Collectors.toMap(
+                        rating -> rating.getCourse().getId(),
+                        rating -> BigDecimal.valueOf(rating.getDifficultyRating()),
+                        (first, second) -> first
+                ));
+    }
+
+    private BigDecimal difficultyOf(
+            GradeCourseItem item,
+            Map<Long, BigDecimal> difficultyByCourseId
+    ) {
+        if (item == null || item.getCourse() == null || item.getCourse().getId() == null) {
+            return NEUTRAL_DIFFICULTY;
+        }
+
+        if (difficultyByCourseId == null || difficultyByCourseId.isEmpty()) {
+            return NEUTRAL_DIFFICULTY;
+        }
+
+        BigDecimal difficulty = difficultyByCourseId.get(item.getCourse().getId());
+
+        if (difficulty == null) {
+            return NEUTRAL_DIFFICULTY;
+        }
+
+        return clamp(difficulty, BigDecimal.ONE, new BigDecimal("5"));
     }
 
     private boolean isRemainingItem(GradeCourseItem item) {

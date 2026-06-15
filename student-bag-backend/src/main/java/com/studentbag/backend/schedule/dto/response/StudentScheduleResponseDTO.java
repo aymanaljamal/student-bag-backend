@@ -10,11 +10,12 @@ import lombok.NoArgsConstructor;
 import java.util.List;
 
 @Data
-@Builder // <--- This generates the builder() method
-@NoArgsConstructor // Required for JSON frameworks like Jackson
-@AllArgsConstructor // Required for @Builder to work
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class StudentScheduleResponseDTO {
     private Long id;
+    private String name;
     private Long termId;
     private String termName;
     private ScheduleStatus status;

@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -30,5 +31,12 @@ public interface CourseRepository extends JpaRepository<Course, Long>,
     where c.id = :id
 """)
     Optional<Course> findDetailedById(@Param("id") Long id);
+    @Query("""
+        SELECT c
+        FROM Course c
+        ORDER BY c.code ASC
+    """)
+    List<Course> findAllForManualSchedulePicker();
+
 
 }

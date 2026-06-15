@@ -14,6 +14,7 @@ import java.util.List;
 public class StudentScheduleViewerResponseDTO {
 
     private Long id;
+    private String name;
     private Long termId;
     private String termName;
     private ScheduleStatus status;
