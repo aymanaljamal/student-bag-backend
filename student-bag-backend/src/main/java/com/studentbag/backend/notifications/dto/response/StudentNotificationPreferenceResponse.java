@@ -1,14 +1,23 @@
 package com.studentbag.backend.notifications.dto.response;
 
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
-@Data
+@Getter
+@Setter
 @Builder
 public class StudentNotificationPreferenceResponse {
+
     private Boolean eventNotificationsEnabled;
+
     private Boolean taskNotificationsEnabled;
+
     private Boolean recurringTaskNotificationsEnabled;
+
     private Boolean taskReminderOneDayBeforeEnabled;
+
     private Boolean monthlyStatsNotificationsEnabled;
+
+    private Boolean weeklyResourceNotificationsEnabled;
 }

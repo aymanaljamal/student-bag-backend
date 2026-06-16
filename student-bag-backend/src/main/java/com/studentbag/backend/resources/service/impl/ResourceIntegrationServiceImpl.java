@@ -1,11 +1,18 @@
 package com.studentbag.backend.resources.service.impl;
 
+import com.studentbag.backend.courses.entity.Course;
+import com.studentbag.backend.domain.enums.schedule.ScheduleStatus;
 import com.studentbag.backend.domain.enums.tasks.TaskStatus;
 import com.studentbag.backend.notes.entity.Note;
 import com.studentbag.backend.notes.entity.NoteAttachment;
 import com.studentbag.backend.notes.repository.NoteAttachmentRepository;
 import com.studentbag.backend.notes.repository.NoteRepository;
-import com.studentbag.backend.resources.dto.response.*;
+import com.studentbag.backend.resources.dto.response.LinkedNoteSummaryResponse;
+import com.studentbag.backend.resources.dto.response.LinkedTaskSummaryResponse;
+import com.studentbag.backend.resources.dto.response.PersonalResourceFolderDetailsResponse;
+import com.studentbag.backend.resources.dto.response.PersonalResourceFolderResponse;
+import com.studentbag.backend.resources.dto.response.PersonalResourceItemResponse;
+import com.studentbag.backend.resources.dto.response.ResourceCourseSummaryResponse;
 import com.studentbag.backend.resources.entity.PersonalResourceFolder;
 import com.studentbag.backend.resources.mapper.PersonalResourceFolderMapper;
 import com.studentbag.backend.resources.mapper.PersonalResourceItemMapper;
@@ -14,6 +21,9 @@ import com.studentbag.backend.resources.repository.PersonalResourceFolderReposit
 import com.studentbag.backend.resources.repository.PersonalResourceItemRepository;
 import com.studentbag.backend.resources.service.ResourceIntegrationService;
 import com.studentbag.backend.schedule.dto.response.ActiveScheduleCourseDTO;
+import com.studentbag.backend.schedule.entity.ScheduleEntry;
+import com.studentbag.backend.schedule.entity.StudentSchedule;
+import com.studentbag.backend.schedule.repository.StudentScheduleRepository;
 import com.studentbag.backend.schedule.service.ScheduleManagementService;
 import com.studentbag.backend.student.entity.Student;
 import com.studentbag.backend.student.repository.StudentRepository;
@@ -25,7 +35,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -34,6 +46,7 @@ import java.util.UUID;
  * <p>This service composes Resource Hub data with:
  * <ul>
  *     <li>Active schedule courses</li>
+ *     <li>Manual active schedule courses</li>
  *     <li>Linked notes by course</li>
  *     <li>Linked tasks by course</li>
  *     <li>Folder details screen payload</li>
@@ -43,6 +56,7 @@ import java.util.UUID;
  * <ul>
  *     <li>Linked notes must not be deleted or archived</li>
  *     <li>Linked tasks must not be deleted, archived, or completed</li>
+ *     <li>Resource Hub courses must include both generated schedule courses and manual schedule courses</li>
  * </ul>
  */
 @Service
@@ -51,6 +65,7 @@ import java.util.UUID;
 public class ResourceIntegrationServiceImpl implements ResourceIntegrationService {
 
     private final ScheduleManagementService scheduleManagementService;
+    private final StudentScheduleRepository studentScheduleRepository;
     private final PersonalResourceFolderRepository folderRepository;
     private final PersonalResourceItemRepository itemRepository;
     private final UserRepository userRepository;
@@ -66,26 +81,57 @@ public class ResourceIntegrationServiceImpl implements ResourceIntegrationServic
     ) {
         Student student = getStudentByUserId(currentUserId);
 
-        List<ActiveScheduleCourseDTO> activeCourses;
+        Map<Long, ResourceCourseSummaryResponse> coursesById = new LinkedHashMap<>();
 
+        /*
+         * Keep the existing integration as-is.
+         * This covers courses returned by ScheduleManagementService.
+         */
         try {
-            activeCourses = scheduleManagementService.getActiveScheduleCourses(student.getId(), termId);
-        } catch (Exception e) {
-            return List.of();
+            List<ActiveScheduleCourseDTO> activeCourses =
+                    scheduleManagementService.getActiveScheduleCourses(student.getId(), termId);
+
+            if (activeCourses != null) {
+                activeCourses.forEach(course -> addCourseSummary(
+                        coursesById,
+                        ResourceCourseSummaryResponse.builder()
+                                .id(course.getId())
+                                .externalId(course.getExternalId())
+                                .code(course.getCode())
+                                .nameArabic(course.getNameArabic())
+                                .nameEnglish(course.getNameEnglish())
+                                .description(course.getDescription())
+                                .creditHours(course.getCreditHours())
+                                .build()
+                ));
+            }
+        } catch (Exception ignored) {
+            /*
+             * Do not fail the Resource Hub if schedule integration fails.
+             * We still try to read directly from the active StudentSchedule below.
+             */
         }
 
-        return activeCourses.stream()
-                .map(course -> ResourceCourseSummaryResponse.builder()
-                        .id(course.getId())
-                        .externalId(course.getExternalId())
-                        .code(course.getCode())
-                        .nameArabic(course.getNameArabic())
-                        .nameEnglish(course.getNameEnglish())
-                        .description(course.getDescription())
-                        .creditHours(course.getCreditHours())
-                        .build())
-                .toList();
+        /*
+         * Important:
+         * Manual schedule entries are saved with manualCourse, not courseSection.
+         * Therefore, they may not appear in ScheduleManagementService results unless that service supports them.
+         *
+         * This fallback/merge reads the ACTIVE schedule directly and adds:
+         * - COURSE entries through courseSection.course
+         * - MANUAL entries through manualCourse
+         *
+         * The LinkedHashMap prevents duplicate courses.
+         */
+        mergeCoursesFromActiveScheduleEntries(
+                coursesById,
+                student.getId(),
+                termId
+        );
+
+        return List.copyOf(coursesById.values());
     }
+
     @Override
     public List<LinkedNoteSummaryResponse> getLinkedNotesByCourse(
             UUID currentUserId,
@@ -139,6 +185,7 @@ public class ResourceIntegrationServiceImpl implements ResourceIntegrationServic
                 })
                 .toList();
     }
+
     @Override
     public List<LinkedTaskSummaryResponse> getLinkedTasksByCourse(
             UUID currentUserId,
@@ -165,17 +212,24 @@ public class ResourceIntegrationServiceImpl implements ResourceIntegrationServic
     ) {
         Student student = getStudentByUserId(currentUserId);
 
-        PersonalResourceFolder folder = folderRepository.findByIdAndStudentIdAndIsDeletedFalse(folderId, student.getId())
+        PersonalResourceFolder folder = folderRepository
+                .findByIdAndStudentIdAndIsDeletedFalse(folderId, student.getId())
                 .orElseThrow(() -> new IllegalArgumentException("Folder not found"));
 
         List<PersonalResourceFolderResponse> childFolders = folderRepository
-                .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(student.getId(), folder.getId())
+                .findByStudentIdAndParentFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtAsc(
+                        student.getId(),
+                        folder.getId()
+                )
                 .stream()
                 .map(PersonalResourceFolderMapper::toResponse)
                 .toList();
 
         List<PersonalResourceItemResponse> items = itemRepository
-                .findByStudentIdAndFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(student.getId(), folder.getId())
+                .findByStudentIdAndFolderIdAndIsDeletedFalseAndIsArchivedFalseOrderByCreatedAtDesc(
+                        student.getId(),
+                        folder.getId()
+                )
                 .stream()
                 .map(PersonalResourceItemMapper::toResponse)
                 .toList();
@@ -197,6 +251,76 @@ public class ResourceIntegrationServiceImpl implements ResourceIntegrationServic
                 .linkedNotes(linkedNotes)
                 .linkedTasks(linkedTasks)
                 .build();
+    }
+
+    private void mergeCoursesFromActiveScheduleEntries(
+            Map<Long, ResourceCourseSummaryResponse> coursesById,
+            Long studentId,
+            Long termId
+    ) {
+        if (studentId == null || termId == null) {
+            return;
+        }
+
+        StudentSchedule activeSchedule = studentScheduleRepository
+                .findByStudent_IdAndTerm_Id(studentId, termId)
+                .stream()
+                .filter(schedule -> schedule.getStatus() == ScheduleStatus.ACTIVE)
+                .findFirst()
+                .orElse(null);
+
+        if (activeSchedule == null || activeSchedule.getEntries() == null) {
+            return;
+        }
+
+        activeSchedule.getEntries()
+                .stream()
+                .map(this::resolveCourseFromScheduleEntry)
+                .filter(course -> course != null && course.getId() != null)
+                .forEach(course -> addCourseSummary(
+                        coursesById,
+                        mapCourseToResourceSummary(course)
+                ));
+    }
+
+    private Course resolveCourseFromScheduleEntry(ScheduleEntry entry) {
+        if (entry == null) {
+            return null;
+        }
+
+        if (entry.getCourseSection() != null
+                && entry.getCourseSection().getCourse() != null) {
+            return entry.getCourseSection().getCourse();
+        }
+
+        if (entry.getManualCourse() != null) {
+            return entry.getManualCourse();
+        }
+
+        return null;
+    }
+
+    private ResourceCourseSummaryResponse mapCourseToResourceSummary(Course course) {
+        return ResourceCourseSummaryResponse.builder()
+                .id(course.getId())
+                .externalId(course.getExternalId())
+                .code(course.getCode())
+                .nameArabic(course.getNameArabic())
+                .nameEnglish(course.getNameEnglish())
+                .description(course.getDescription())
+                .creditHours(course.getCreditHours())
+                .build();
+    }
+
+    private void addCourseSummary(
+            Map<Long, ResourceCourseSummaryResponse> coursesById,
+            ResourceCourseSummaryResponse course
+    ) {
+        if (coursesById == null || course == null || course.getId() == null) {
+            return;
+        }
+
+        coursesById.putIfAbsent(course.getId(), course);
     }
 
     private Student getStudentByUserId(UUID userId) {

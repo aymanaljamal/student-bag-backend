@@ -49,3 +49,18 @@ openai:
   api-key: ${OPENAI_API_KEY:}
   model: ${OPENAI_MODEL:gpt-4.1-mini}
   base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+
+student-bag:
+  notifications:
+    zone: Asia/Hebron
+
+    recurring-tasks:
+      daily-cron: "0 0 8 * * *"
+
+    events:
+      daily-cron: "0 10 8 * * *"
+
+    resources:
+      weekly-cron: "0 0 18 ? * TUE"
+      send-first-on-startup: true
+      first-run-date: "2026-06-16"

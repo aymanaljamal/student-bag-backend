@@ -20,7 +20,8 @@ public class StudentNotificationPreference {
     @OneToOne(optional = false)
     @JoinColumn(name = "student_id", unique = true, nullable = false)
     private Student student;
-
+    @Builder.Default
+    private Boolean weeklyResourceNotificationsEnabled = true;
     @Column(nullable = false)
     @Builder.Default
     private Boolean eventNotificationsEnabled = true;

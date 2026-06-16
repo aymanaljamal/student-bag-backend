@@ -7,14 +7,11 @@ import com.studentbag.backend.analytics.repository.AnalyticsQueryRepository;
 import com.studentbag.backend.analytics.service.InstructorDashboardAnalyticsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
 import java.util.List;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class InstructorDashboardAnalyticsServiceImpl implements InstructorDashboardAnalyticsService {
 
     private final AnalyticsQueryRepository queryRepository;
