@@ -29,6 +29,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -85,6 +86,17 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
 
         List<StudentSchedule> schedules = studentScheduleRepository
                 .findByStudent_IdAndTerm_Id(studentId, termId);
+
+        StudentSchedule previousActiveSchedule = schedules.stream()
+                .filter(schedule -> schedule.getStatus() == ScheduleStatus.ACTIVE)
+                .filter(schedule -> !Objects.equals(schedule.getId(), target.getId()))
+                .findFirst()
+                .orElse(null);
+
+        copyPersonalEntriesFromPreviousActiveSchedule(
+                previousActiveSchedule,
+                target
+        );
 
         for (StudentSchedule schedule : schedules) {
             if (schedule.getId().equals(target.getId())) {
@@ -232,6 +244,124 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
             schedule.addEntry(hiddenEntry);
             existingSectionIds.add(sectionId);
         }
+    }
+
+    private void copyPersonalEntriesFromPreviousActiveSchedule(
+            StudentSchedule previousActiveSchedule,
+            StudentSchedule targetSchedule
+    ) {
+        if (previousActiveSchedule == null || targetSchedule == null) {
+            return;
+        }
+
+        if (Objects.equals(previousActiveSchedule.getId(), targetSchedule.getId())) {
+            return;
+        }
+
+        List<ScheduleEntry> entriesToCopy = previousActiveSchedule.getEntries()
+                .stream()
+                .filter(this::isPersonalEntry)
+                .filter(sourceEntry -> !hasEquivalentPersonalEntry(targetSchedule, sourceEntry))
+                .map(sourceEntry -> copyPersonalEntry(sourceEntry, targetSchedule))
+                .toList();
+
+        for (ScheduleEntry entry : entriesToCopy) {
+            targetSchedule.addEntry(entry);
+        }
+    }
+
+    private boolean isPersonalEntry(ScheduleEntry entry) {
+        return entry != null
+                && entry.getSourceType() != null
+                && entry.getSourceType() != ScheduleSourceType.COURSE;
+    }
+
+    private ScheduleEntry copyPersonalEntry(
+            ScheduleEntry source,
+            StudentSchedule targetSchedule
+    ) {
+        return ScheduleEntry.builder()
+                .schedule(targetSchedule)
+                .student(targetSchedule.getStudent())
+                .sourceType(source.getSourceType())
+                .courseSection(source.getCourseSection())
+                .manualCourse(source.getManualCourse())
+                .manualSectionNumber(source.getManualSectionNumber())
+                .event(source.getEvent())
+                .title(source.getTitle())
+                .description(source.getDescription())
+                .building(source.getBuilding())
+                .room(source.getRoom())
+                .location(source.getLocation())
+                .startDateTime(source.getStartDateTime())
+                .endDateTime(source.getEndDateTime())
+                .isAllDay(Boolean.TRUE.equals(source.getIsAllDay()))
+                .isLocked(Boolean.TRUE.equals(source.getIsLocked()))
+                .colorHex(source.getColorHex())
+                .build();
+    }
+
+    private boolean hasEquivalentPersonalEntry(
+            StudentSchedule targetSchedule,
+            ScheduleEntry sourceEntry
+    ) {
+        return targetSchedule.getEntries()
+                .stream()
+                .filter(this::isPersonalEntry)
+                .anyMatch(existingEntry -> isSamePersonalEntry(existingEntry, sourceEntry));
+    }
+
+    private boolean isSamePersonalEntry(
+            ScheduleEntry first,
+            ScheduleEntry second
+    ) {
+        if (!Objects.equals(first.getSourceType(), second.getSourceType())) {
+            return false;
+        }
+
+        Long firstEventId = getEventId(first);
+        Long secondEventId = getEventId(second);
+
+        if (firstEventId != null || secondEventId != null) {
+            return Objects.equals(firstEventId, secondEventId);
+        }
+
+        return Objects.equals(getCourseSectionId(first), getCourseSectionId(second))
+                && Objects.equals(getManualCourseId(first), getManualCourseId(second))
+                && Objects.equals(first.getManualSectionNumber(), second.getManualSectionNumber())
+                && Objects.equals(first.getTitle(), second.getTitle())
+                && Objects.equals(first.getDescription(), second.getDescription())
+                && Objects.equals(first.getLocation(), second.getLocation())
+                && Objects.equals(first.getStartDateTime(), second.getStartDateTime())
+                && Objects.equals(first.getEndDateTime(), second.getEndDateTime())
+                && Objects.equals(
+                Boolean.TRUE.equals(first.getIsAllDay()),
+                Boolean.TRUE.equals(second.getIsAllDay())
+        );
+    }
+
+    private Long getEventId(ScheduleEntry entry) {
+        if (entry == null || entry.getEvent() == null) {
+            return null;
+        }
+
+        return entry.getEvent().getId();
+    }
+
+    private Long getManualCourseId(ScheduleEntry entry) {
+        if (entry == null || entry.getManualCourse() == null) {
+            return null;
+        }
+
+        return entry.getManualCourse().getId();
+    }
+
+    private Long getCourseSectionId(ScheduleEntry entry) {
+        if (entry == null || entry.getCourseSection() == null) {
+            return null;
+        }
+
+        return entry.getCourseSection().getId();
     }
 
     private StudentScheduleViewerResponseDTO mapToViewerResponse(StudentSchedule schedule) {

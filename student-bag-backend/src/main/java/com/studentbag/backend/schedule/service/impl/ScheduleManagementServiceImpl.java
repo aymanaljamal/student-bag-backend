@@ -30,10 +30,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -42,6 +47,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ScheduleManagementServiceImpl implements ScheduleManagementService {
+
+    private static final DateTimeFormatter NOTIFICATION_DATE_TIME_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final StudentScheduleRepository scheduleRepository;
     private final ScheduleMapper scheduleMapper;
@@ -52,13 +60,13 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
     @Override
     @Transactional
     public void activateSchedule(Long scheduleId, Long studentId) {
-        StudentSchedule schedule = findAndValidate(scheduleId, studentId);
+        StudentSchedule targetSchedule = findAndValidate(scheduleId, studentId);
 
-        if (schedule.getStatus() == ScheduleStatus.DELETED) {
+        if (targetSchedule.getStatus() == ScheduleStatus.DELETED) {
             throw new RuntimeException("Cannot activate a deleted schedule");
         }
 
-        Long termId = schedule.getTerm() != null ? schedule.getTerm().getId() : null;
+        Long termId = targetSchedule.getTerm() != null ? targetSchedule.getTerm().getId() : null;
 
         if (termId == null) {
             throw new RuntimeException("Schedule term is required");
@@ -71,21 +79,42 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
                         ScheduleStatus.ACTIVE
                 );
 
+        StudentSchedule previousActiveSchedule = activeSchedules.stream()
+                .filter(activeSchedule -> activeSchedule.getId() != null)
+                .filter(activeSchedule -> !activeSchedule.getId().equals(targetSchedule.getId()))
+                .findFirst()
+                .orElse(null);
+
+        int copiedPersonalEntriesCount = copyPersonalEntriesFromPreviousActiveSchedule(
+                previousActiveSchedule,
+                targetSchedule
+        );
+
+        List<ConflictDTO> conflicts = detectConflicts(targetSchedule.getEntries());
+
         activeSchedules.stream()
                 .filter(activeSchedule -> activeSchedule.getId() != null)
-                .filter(activeSchedule -> !activeSchedule.getId().equals(schedule.getId()))
-                .forEach(activeSchedule ->activeSchedule.setStatus(ScheduleStatus.ARCHIVED));
+                .filter(activeSchedule -> !activeSchedule.getId().equals(targetSchedule.getId()))
+                .forEach(activeSchedule -> activeSchedule.setStatus(ScheduleStatus.ARCHIVED));
 
-        schedule.setStatus(ScheduleStatus.ACTIVE);
-        schedule.setActivatedAt(LocalDateTime.now());
+        targetSchedule.setStatus(ScheduleStatus.ACTIVE);
+        targetSchedule.setActivatedAt(LocalDateTime.now());
 
         scheduleRepository.saveAll(activeSchedules);
-        scheduleRepository.save(schedule);
+        StudentSchedule savedSchedule = scheduleRepository.save(targetSchedule);
+
+        notifyScheduleActivated(
+                savedSchedule,
+                copiedPersonalEntriesCount,
+                conflicts
+        );
 
         log.info(
-                "Schedule {} activated for student {}.Old active schedules were archived.",
+                "Schedule {} activated for student {}. Old active schedules archived. Copied personal entries: {}. Conflicts: {}",
                 scheduleId,
-                studentId
+                studentId,
+                copiedPersonalEntriesCount,
+                conflicts.size()
         );
     }
 
@@ -155,6 +184,8 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
             throw new RuntimeException("Cannot edit an archived or deleted schedule");
         }
 
+        List<EntrySnapshot> beforeEntries = snapshotEntries(schedule.getEntries());
+
         List<UpdateScheduleEntryRequest> requestedEntries =
                 request.getEntries() == null
                         ? Collections.emptyList()
@@ -169,6 +200,9 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
 
         List<ConflictDTO> conflicts = detectConflicts(newEntries);
 
+        List<EntrySnapshot> afterEntries = snapshotEntries(newEntries);
+        List<String> changeLines = buildScheduleChangeLines(beforeEntries, afterEntries);
+
         schedule.getEntries().clear();
 
         for (ScheduleEntry entry : newEntries) {
@@ -182,18 +216,17 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
                 conflicts.isEmpty()
                         ? "Schedule updated"
                         : "Schedule updated with conflicts",
-                conflicts.isEmpty()
-                        ? "Your schedule was updated successfully."
-                        : "Your schedule was updated, but some entries have time conflicts.",
+                buildScheduleUpdateNotificationBody(changeLines, conflicts),
                 conflicts.isEmpty()
                         ? NotificationPriority.NORMAL
                         : NotificationPriority.HIGH
         );
 
         log.info(
-                "Schedule {} updated with {} entries, {} conflicts",
+                "Schedule {} updated with {} entries, {} changes, {} conflicts",
                 scheduleId,
                 newEntries.size(),
+                changeLines.size(),
                 conflicts.size()
         );
 
@@ -382,6 +415,158 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
         }
     }
 
+    private int copyPersonalEntriesFromPreviousActiveSchedule(
+            StudentSchedule previousActiveSchedule,
+            StudentSchedule targetSchedule
+    ) {
+        if (previousActiveSchedule == null || targetSchedule == null) {
+            return 0;
+        }
+
+        if (Objects.equals(previousActiveSchedule.getId(), targetSchedule.getId())) {
+            return 0;
+        }
+
+        List<ScheduleEntry> entriesToCopy = previousActiveSchedule.getEntries()
+                .stream()
+                .filter(this::isPersonalEntry)
+                .filter(sourceEntry -> !hasEquivalentPersonalEntry(targetSchedule, sourceEntry))
+                .map(sourceEntry -> copyPersonalEntry(sourceEntry, targetSchedule))
+                .toList();
+
+        for (ScheduleEntry entry : entriesToCopy) {
+            targetSchedule.addEntry(entry);
+        }
+
+        return entriesToCopy.size();
+    }
+
+    private boolean isPersonalEntry(ScheduleEntry entry) {
+        return entry != null
+                && entry.getSourceType() != null
+                && entry.getSourceType() != ScheduleSourceType.COURSE;
+    }
+
+    private ScheduleEntry copyPersonalEntry(
+            ScheduleEntry source,
+            StudentSchedule targetSchedule
+    ) {
+        return ScheduleEntry.builder()
+                .schedule(targetSchedule)
+                .student(targetSchedule.getStudent())
+                .sourceType(source.getSourceType())
+                .courseSection(source.getCourseSection())
+                .manualCourse(source.getManualCourse())
+                .manualSectionNumber(source.getManualSectionNumber())
+                .event(source.getEvent())
+                .title(source.getTitle())
+                .description(source.getDescription())
+                .building(source.getBuilding())
+                .room(source.getRoom())
+                .location(source.getLocation())
+                .startDateTime(source.getStartDateTime())
+                .endDateTime(source.getEndDateTime())
+                .isAllDay(Boolean.TRUE.equals(source.getIsAllDay()))
+                .isLocked(Boolean.TRUE.equals(source.getIsLocked()))
+                .colorHex(source.getColorHex())
+                .build();
+    }
+
+    private boolean hasEquivalentPersonalEntry(
+            StudentSchedule targetSchedule,
+            ScheduleEntry sourceEntry
+    ) {
+        return targetSchedule.getEntries()
+                .stream()
+                .filter(this::isPersonalEntry)
+                .anyMatch(existingEntry -> isSamePersonalEntry(existingEntry, sourceEntry));
+    }
+
+    private boolean isSamePersonalEntry(
+            ScheduleEntry first,
+            ScheduleEntry second
+    ) {
+        if (!Objects.equals(first.getSourceType(), second.getSourceType())) {
+            return false;
+        }
+
+        Long firstEventId = getEventId(first);
+        Long secondEventId = getEventId(second);
+
+        if (firstEventId != null || secondEventId != null) {
+            return Objects.equals(firstEventId, secondEventId);
+        }
+
+        return Objects.equals(getCourseSectionId(first), getCourseSectionId(second))
+                && Objects.equals(getManualCourseId(first), getManualCourseId(second))
+                && Objects.equals(first.getManualSectionNumber(), second.getManualSectionNumber())
+                && Objects.equals(first.getTitle(), second.getTitle())
+                && Objects.equals(first.getDescription(), second.getDescription())
+                && Objects.equals(first.getLocation(), second.getLocation())
+                && Objects.equals(first.getStartDateTime(), second.getStartDateTime())
+                && Objects.equals(first.getEndDateTime(), second.getEndDateTime())
+                && Objects.equals(
+                Boolean.TRUE.equals(first.getIsAllDay()),
+                Boolean.TRUE.equals(second.getIsAllDay())
+        );
+    }
+
+    private Long getEventId(ScheduleEntry entry) {
+        if (entry == null || entry.getEvent() == null) {
+            return null;
+        }
+
+        return entry.getEvent().getId();
+    }
+
+    private Long getManualCourseId(ScheduleEntry entry) {
+        if (entry == null || entry.getManualCourse() == null) {
+            return null;
+        }
+
+        return entry.getManualCourse().getId();
+    }
+
+    private Long getCourseSectionId(ScheduleEntry entry) {
+        if (entry == null || entry.getCourseSection() == null) {
+            return null;
+        }
+
+        return entry.getCourseSection().getId();
+    }
+
+    private void notifyScheduleActivated(
+            StudentSchedule schedule,
+            int copiedPersonalEntriesCount,
+            List<ConflictDTO> conflicts
+    ) {
+        String title = conflicts == null || conflicts.isEmpty()
+                ? "Schedule activated"
+                : "Schedule activated with conflicts";
+
+        StringBuilder body = new StringBuilder();
+        body.append("Your new schedule is now active.");
+
+        if (copiedPersonalEntriesCount > 0) {
+            body.append("\n\nTransferred entries: ")
+                    .append(copiedPersonalEntriesCount)
+                    .append(" manual/event entry(s) were moved from your previous active schedule.");
+        } else {
+            body.append("\n\nTransferred entries: No manual/event entries needed to be moved.");
+        }
+
+        appendConflictDetails(body, conflicts);
+
+        notifyScheduleOwner(
+                schedule,
+                title,
+                body.toString(),
+                conflicts == null || conflicts.isEmpty()
+                        ? NotificationPriority.NORMAL
+                        : NotificationPriority.HIGH
+        );
+    }
+
     private void notifyScheduleOwner(
             StudentSchedule schedule,
             String title,
@@ -410,6 +595,143 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
         request.setRecipientUserIds(List.of(userId));
 
         notificationService.createAndSend(request);
+    }
+
+    private String buildScheduleUpdateNotificationBody(
+            List<String> changeLines,
+            List<ConflictDTO> conflicts
+    ) {
+        StringBuilder body = new StringBuilder();
+
+        if (conflicts == null || conflicts.isEmpty()) {
+            body.append("Your schedule was updated successfully.");
+        } else {
+            body.append("Your schedule was updated, but some entries have time conflicts.");
+        }
+
+        if (changeLines == null || changeLines.isEmpty()) {
+            body.append("\n\nChanged details: No visible entry changes were detected.");
+        } else {
+            body.append("\n\nChanged details:");
+
+            int maxVisibleChanges = Math.min(changeLines.size(), 8);
+
+            for (int i = 0; i < maxVisibleChanges; i++) {
+                body.append("\n- ").append(changeLines.get(i));
+            }
+
+            if (changeLines.size() > maxVisibleChanges) {
+                body.append("\n- +")
+                        .append(changeLines.size() - maxVisibleChanges)
+                        .append(" more change(s)");
+            }
+        }
+
+        appendConflictDetails(body, conflicts);
+
+        return body.toString();
+    }
+
+    private void appendConflictDetails(
+            StringBuilder body,
+            List<ConflictDTO> conflicts
+    ) {
+        if (body == null || conflicts == null || conflicts.isEmpty()) {
+            return;
+        }
+
+        body.append("\n\nConflicts:");
+
+        int maxVisibleConflicts = Math.min(conflicts.size(), 6);
+
+        for (int i = 0; i < maxVisibleConflicts; i++) {
+            body.append("\n- ").append(formatConflictLine(conflicts.get(i)));
+        }
+
+        if (conflicts.size() > maxVisibleConflicts) {
+            body.append("\n- +")
+                    .append(conflicts.size() - maxVisibleConflicts)
+                    .append(" more conflict(s)");
+        }
+    }
+
+    private String formatConflictLine(ConflictDTO conflict) {
+        if (conflict == null) {
+            return "Unknown conflict";
+        }
+
+        return safeText(conflict.getEntryATitle(), "Entry A")
+                + " conflicts with "
+                + safeText(conflict.getEntryBTitle(), "Entry B")
+                + " from "
+                + formatDateTime(conflict.getConflictStart())
+                + " to "
+                + formatDateTime(conflict.getConflictEnd());
+    }
+
+    private List<EntrySnapshot> snapshotEntries(List<ScheduleEntry> entries) {
+        if (entries == null || entries.isEmpty()) {
+            return List.of();
+        }
+
+        return entries.stream()
+                .map(EntrySnapshot::from)
+                .sorted(Comparator.comparing(EntrySnapshot::sortKey))
+                .toList();
+    }
+
+    private List<String> buildScheduleChangeLines(
+            List<EntrySnapshot> beforeEntries,
+            List<EntrySnapshot> afterEntries
+    ) {
+        Map<String, EntrySnapshot> beforeMap = toSnapshotMap(beforeEntries);
+        Map<String, EntrySnapshot> afterMap = toSnapshotMap(afterEntries);
+
+        List<String> changes = new ArrayList<>();
+
+        for (Map.Entry<String, EntrySnapshot> afterItem : afterMap.entrySet()) {
+            EntrySnapshot before = beforeMap.get(afterItem.getKey());
+            EntrySnapshot after = afterItem.getValue();
+
+            if (before == null) {
+                changes.add("Added: " + after.displayNameWithTime());
+                continue;
+            }
+
+            List<String> entryChanges = before.diff(after);
+
+            if (!entryChanges.isEmpty()) {
+                changes.add("Updated " + after.displayName + ": " + String.join(", ", entryChanges));
+            }
+        }
+
+        for (Map.Entry<String, EntrySnapshot> beforeItem : beforeMap.entrySet()) {
+            if (!afterMap.containsKey(beforeItem.getKey())) {
+                changes.add("Removed: " + beforeItem.getValue().displayNameWithTime());
+            }
+        }
+
+        return changes;
+    }
+
+    private Map<String, EntrySnapshot> toSnapshotMap(List<EntrySnapshot> snapshots) {
+        Map<String, EntrySnapshot> map = new LinkedHashMap<>();
+
+        if (snapshots == null) {
+            return map;
+        }
+
+        for (EntrySnapshot snapshot : snapshots) {
+            String key = snapshot.stableKey();
+
+            if (map.containsKey(key)) {
+                key = key + "#" + snapshot.sortKey();
+            }
+
+            map.put(key, snapshot);
+        }
+
+        return map;
     }
 
     private String resolveTitle(UpdateScheduleEntryRequest dto) {
@@ -518,5 +840,193 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
                 .instructorNameArabic(instructorNameArabic)
                 .instructorNameEnglish(instructorNameEnglish)
                 .build();
+    }
+
+    private static String safeText(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+
+        return value.trim();
+    }
+
+    private static String cleanText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        return value.trim();
+    }
+
+    private static String formatDateTime(LocalDateTime dateTime) {
+        if (dateTime == null) {
+            return "not set";
+        }
+
+        return dateTime.format(NOTIFICATION_DATE_TIME_FORMATTER);
+    }
+
+    private static String formatValue(Object value) {
+        if (value == null) {
+            return "not set";
+        }
+
+        if (value instanceof String text) {
+            if (text.isBlank()) {
+                return "not set";
+            }
+
+            return truncate(text.trim(), 60);
+        }
+
+        if (value instanceof LocalDateTime dateTime) {
+            return formatDateTime(dateTime);
+        }
+
+        if (value instanceof Boolean bool) {
+            return bool ? "Yes" : "No";
+        }
+
+        return truncate(String.valueOf(value), 60);
+    }
+
+    private static String truncate(String value, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+
+        if (value.length() <= maxLength) {
+            return value;
+        }
+
+        return value.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    private static final class EntrySnapshot {
+        private Long id;
+        private ScheduleSourceType sourceType;
+        private Long courseSectionId;
+        private Long manualCourseId;
+        private Long eventId;
+        private String manualSectionNumber;
+        private String displayName;
+        private String description;
+        private String location;
+        private LocalDateTime startDateTime;
+        private LocalDateTime endDateTime;
+        private Boolean isAllDay;
+        private String colorHex;
+
+        private static EntrySnapshot from(ScheduleEntry entry) {
+            EntrySnapshot snapshot = new EntrySnapshot();
+
+            if (entry == null) {
+                return snapshot;
+            }
+
+            snapshot.id = entry.getId();
+            snapshot.sourceType = entry.getSourceType();
+            snapshot.courseSectionId = entry.getCourseSection() != null
+                    ? entry.getCourseSection().getId()
+                    : null;
+            snapshot.manualCourseId = entry.getManualCourse() != null
+                    ? entry.getManualCourse().getId()
+                    : null;
+            snapshot.eventId = entry.getEvent() != null
+                    ? entry.getEvent().getId()
+                    : null;
+            snapshot.manualSectionNumber = cleanText(entry.getManualSectionNumber());
+            snapshot.displayName = safeText(entry.getTitle(), "Schedule Entry");
+            snapshot.description = cleanText(entry.getDescription());
+            snapshot.location = cleanText(entry.getLocation());
+            snapshot.startDateTime = entry.getStartDateTime();
+            snapshot.endDateTime = entry.getEndDateTime();
+            snapshot.isAllDay = Boolean.TRUE.equals(entry.getIsAllDay());
+            snapshot.colorHex = cleanText(entry.getColorHex());
+
+            return snapshot;
+        }
+
+        private String stableKey() {
+            if (sourceType == ScheduleSourceType.EVENT && eventId != null) {
+                return "EVENT:" + eventId;
+            }
+
+            if (sourceType == ScheduleSourceType.COURSE && courseSectionId != null) {
+                return "COURSE:" + courseSectionId;
+            }
+
+            if (sourceType == ScheduleSourceType.MANUAL && manualCourseId != null) {
+                return "MANUAL:"
+                        + manualCourseId
+                        + ":"
+                        + safeText(manualSectionNumber, "NO_SECTION")
+                        + ":"
+                        + formatDateTime(startDateTime)
+                        + ":"
+                        + formatDateTime(endDateTime);
+            }
+
+            if (id != null) {
+                return "ID:" + id;
+            }
+
+            return "ENTRY:"
+                    + sourceType
+                    + ":"
+                    + safeText(displayName, "NO_TITLE")
+                    + ":"
+                    + formatDateTime(startDateTime)
+                    + ":"
+                    + formatDateTime(endDateTime)
+                    + ":"
+                    + safeText(location, "NO_LOCATION");
+        }
+
+        private String sortKey() {
+            return stableKey()
+                    + ":"
+                    + safeText(displayName, "")
+                    + ":"
+                    + formatDateTime(startDateTime)
+                    + ":"
+                    + formatDateTime(endDateTime);
+        }
+
+        private String displayNameWithTime() {
+            return displayName
+                    + " ["
+                    + formatDateTime(startDateTime)
+                    + " - "
+                    + formatDateTime(endDateTime)
+                    + "]";
+        }
+
+        private List<String> diff(EntrySnapshot after) {
+            List<String> changes = new ArrayList<>();
+
+            addDiff(changes, "title", displayName, after.displayName);
+            addDiff(changes, "description", description, after.description);
+            addDiff(changes, "location", location, after.location);
+            addDiff(changes, "start", startDateTime, after.startDateTime);
+            addDiff(changes, "end", endDateTime, after.endDateTime);
+            addDiff(changes, "all-day", isAllDay, after.isAllDay);
+            addDiff(changes, "color", colorHex, after.colorHex);
+
+            return changes;
+        }
+
+        private void addDiff(
+                List<String> changes,
+                String label,
+                Object before,
+                Object after
+        ) {
+            if (Objects.equals(before, after)) {
+                return;
+            }
+
+            changes.add(label + ": " + formatValue(before) + " → " + formatValue(after));
+        }
     }
 }

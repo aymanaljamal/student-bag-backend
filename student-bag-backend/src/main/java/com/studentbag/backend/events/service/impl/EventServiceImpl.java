@@ -41,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -111,6 +112,8 @@ public class EventServiceImpl implements EventService {
 
         validateEventOwnerOrAdmin(existingEvent, currentUser);
 
+        EventChangeSnapshot beforeUpdate = EventChangeSnapshot.from(existingEvent);
+
         eventMapper.updateEntity(existingEvent, request);
         existingEvent.setInstitution(institution);
 
@@ -130,16 +133,20 @@ public class EventServiceImpl implements EventService {
 
         Event savedEvent = eventRepository.save(existingEvent);
 
+        EventChangeSnapshot afterUpdate = EventChangeSnapshot.from(savedEvent);
+        List<String> changedDetails = buildEventChangeLines(beforeUpdate, afterUpdate);
+
         refreshEventEntriesInActiveSchedules(savedEvent);
 
-        notifyEventUpdated(savedEvent, currentUser);
+        notifyEventUpdated(savedEvent, currentUser, changedDetails);
 
         log.info(
-                "Updated event id={} updatedByUser={} isOpportunity={} hasOpportunity={}",
+                "Updated event id={} updatedByUser={} isOpportunity={} hasOpportunity={} changedDetailsCount={}",
                 savedEvent.getId(),
                 currentUser.getId(),
                 savedEvent.getIsOpportunity(),
-                savedEvent.getOpportunity() != null
+                savedEvent.getOpportunity() != null,
+                changedDetails.size()
         );
 
         return buildEventResponse(savedEvent, null);
@@ -508,7 +515,11 @@ public class EventServiceImpl implements EventService {
         }
     }
 
-    private void notifyEventUpdated(Event event, User updatedBy) {
+    private void notifyEventUpdated(
+            Event event,
+            User updatedBy,
+            List<String> changedDetails
+    ) {
         if (event == null || event.getId() == null || updatedBy == null) {
             return;
         }
@@ -517,24 +528,149 @@ public class EventServiceImpl implements EventService {
         boolean updatedByCreator = event.getCreatedByUser() != null
                 && Objects.equals(event.getCreatedByUser().getId(), updatedBy.getId());
 
-        String studentBody = updatedByAdmin
-                ? "The event \"" + safeTitle(event) + "\" has been updated by the administration. Please review the latest details."
-                : "The event \"" + safeTitle(event) + "\" has been updated. Please review the latest details.";
+        String baseStudentBody = updatedByAdmin
+                ? "The event \"" + safeTitle(event) + "\" has been updated by the administration."
+                : "The event \"" + safeTitle(event) + "\" has been updated.";
+
+        String changesSummary = buildChangesSummary(changedDetails);
 
         notifyRegisteredStudents(
                 event,
-                "Event updated",
-                studentBody,
-                "/student/events/" + event.getId()
+                "Event updated: " + safeTitle(event),
+                baseStudentBody + changesSummary,
+                studentEventRoute(event)
         );
 
         if (updatedByAdmin && !updatedByCreator) {
             notifyEventCreator(
                     event,
                     "Your event was updated by admin",
-                    "An administrator updated your event \"" + safeTitle(event) + "\"."
+                    "An administrator updated your event \"" + safeTitle(event) + "\"." + changesSummary
             );
         }
+    }
+
+    private List<String> buildEventChangeLines(
+            EventChangeSnapshot before,
+            EventChangeSnapshot after
+    ) {
+        List<String> changes = new ArrayList<>();
+
+        if (before == null || after == null) {
+            return changes;
+        }
+
+        addChange(changes, "Title", before.title, after.title);
+        addChange(changes, "Description", before.description, after.description);
+        addChange(changes, "Location", before.location, after.location);
+        addChange(changes, "Department", before.department, after.department);
+        addChange(changes, "Host", before.host, after.host);
+        addChange(changes, "Event type", before.eventType, after.eventType);
+        addChange(changes, "Start time", before.startDateTime, after.startDateTime);
+        addChange(changes, "End time", before.endDateTime, after.endDateTime);
+        addChange(changes, "Requires registration", before.requiresRegistration, after.requiresRegistration);
+        addChange(changes, "Opportunity", before.isOpportunity, after.isOpportunity);
+
+        addChange(changes, "Company name", before.opportunityCompanyName, after.opportunityCompanyName);
+        addChange(changes, "Role title", before.opportunityRoleTitle, after.opportunityRoleTitle);
+        addChange(changes, "Opportunity field", before.opportunityField, after.opportunityField);
+        addChange(changes, "Paid opportunity", before.opportunityIsPaid, after.opportunityIsPaid);
+        addChange(changes, "Work mode", before.opportunityWorkMode, after.opportunityWorkMode);
+        addChange(changes, "Application deadline", before.opportunityApplicationDeadline, after.opportunityApplicationDeadline);
+        addChange(changes, "Duration weeks", before.opportunityDurationWeeks, after.opportunityDurationWeeks);
+        addChange(changes, "Application URL", before.opportunityApplicationUrl, after.opportunityApplicationUrl);
+
+        return changes;
+    }
+
+    private void addChange(
+            List<String> changes,
+            String label,
+            Object oldValue,
+            Object newValue
+    ) {
+        if (Objects.equals(oldValue, newValue)) {
+            return;
+        }
+
+        changes.add(label + ": " + formatNotificationValue(oldValue)
+                + " → " + formatNotificationValue(newValue));
+    }
+
+    private String buildChangesSummary(List<String> changedDetails) {
+        if (changedDetails == null || changedDetails.isEmpty()) {
+            return " No visible event details were changed.";
+        }
+
+        int maxVisibleChanges = 6;
+        StringBuilder builder = new StringBuilder();
+        builder.append("\n\nChanged details:");
+
+        int visibleCount = Math.min(changedDetails.size(), maxVisibleChanges);
+
+        for (int i = 0; i < visibleCount; i++) {
+            builder.append("\n- ").append(changedDetails.get(i));
+        }
+
+        if (changedDetails.size() > maxVisibleChanges) {
+            builder.append("\n- +")
+                    .append(changedDetails.size() - maxVisibleChanges)
+                    .append(" more change(s)");
+        }
+
+        return builder.toString();
+    }
+
+    private String formatNotificationValue(Object value) {
+        if (value == null) {
+            return "not set";
+        }
+
+        if (value instanceof String text) {
+            if (text.isBlank()) {
+                return "not set";
+            }
+
+            return truncateForNotification(text.trim(), 80);
+        }
+
+        if (value instanceof LocalDateTime dateTime) {
+            return dateTime.toString().replace("T", " ");
+        }
+
+        if (value instanceof LocalDate date) {
+            return date.toString();
+        }
+
+        if (value instanceof Boolean bool) {
+            return bool ? "Yes" : "No";
+        }
+
+        return truncateForNotification(String.valueOf(value), 80);
+    }
+
+    private String truncateForNotification(String value, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+
+        if (value.length() <= maxLength) {
+            return value;
+        }
+
+        return value.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    private String studentEventRoute(Event event) {
+        if (event == null || event.getId() == null) {
+            return "/student/events";
+        }
+
+        if (isOpportunityEvent(event)) {
+            return "/student/opportunities/" + event.getId();
+        }
+
+        return "/student/events/" + event.getId();
     }
 
     private void notifyRegisteredStudents(
@@ -980,6 +1116,7 @@ public class EventServiceImpl implements EventService {
 
         return "A student";
     }
+
     @Override
     public void notifyEventRegistrants(
             Long eventId,
@@ -1028,6 +1165,7 @@ public class EventServiceImpl implements EventService {
                 currentUser.getId()
         );
     }
+
     private boolean containsIgnoreCase(String value, String query) {
         return value != null
                 && query != null
@@ -1036,5 +1174,70 @@ public class EventServiceImpl implements EventService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static final class EventChangeSnapshot {
+        private String title;
+        private String description;
+        private String location;
+        private String department;
+        private String host;
+        private Object eventType;
+        private LocalDateTime startDateTime;
+        private LocalDateTime endDateTime;
+        private Boolean requiresRegistration;
+        private Boolean isOpportunity;
+
+        private String opportunityCompanyName;
+        private String opportunityRoleTitle;
+        private String opportunityField;
+        private Boolean opportunityIsPaid;
+        private String opportunityWorkMode;
+        private LocalDate opportunityApplicationDeadline;
+        private Integer opportunityDurationWeeks;
+        private String opportunityApplicationUrl;
+
+        private static EventChangeSnapshot from(Event event) {
+            EventChangeSnapshot snapshot = new EventChangeSnapshot();
+
+            if (event == null) {
+                return snapshot;
+            }
+
+            snapshot.title = normalizeText(event.getTitle());
+            snapshot.description = normalizeText(event.getDescription());
+            snapshot.location = normalizeText(event.getLocation());
+            snapshot.department = normalizeText(event.getDepartment());
+            snapshot.host = normalizeText(event.getHost());
+            snapshot.eventType = event.getEventType();
+            snapshot.startDateTime = event.getStartDateTime();
+            snapshot.endDateTime = event.getEndDateTime();
+            snapshot.requiresRegistration = event.getRequiresRegistration();
+            snapshot.isOpportunity = Boolean.TRUE.equals(event.getIsOpportunity())
+                    || event.getOpportunity() != null;
+
+            Opportunity opportunity = event.getOpportunity();
+
+            if (opportunity != null) {
+                snapshot.opportunityCompanyName = normalizeText(opportunity.getCompanyName());
+                snapshot.opportunityRoleTitle = normalizeText(opportunity.getRoleTitle());
+                snapshot.opportunityField = normalizeText(opportunity.getField());
+                snapshot.opportunityIsPaid = opportunity.getIsPaid();
+                snapshot.opportunityWorkMode = normalizeText(opportunity.getWorkMode());
+                snapshot.opportunityApplicationDeadline = opportunity.getApplicationDeadline();
+                snapshot.opportunityDurationWeeks = opportunity.getDurationWeeks();
+                snapshot.opportunityApplicationUrl = normalizeText(opportunity.getApplicationUrl());
+            }
+
+            return snapshot;
+        }
+
+        private static String normalizeText(String value) {
+            if (value == null || value.isBlank()) {
+                return null;
+            }
+
+            return value.trim();
+        }
     }
 }

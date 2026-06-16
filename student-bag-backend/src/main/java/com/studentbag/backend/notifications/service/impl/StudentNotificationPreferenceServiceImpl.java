@@ -37,11 +37,24 @@ public class StudentNotificationPreferenceServiceImpl
     ) {
         StudentNotificationPreference preference = getOrCreatePreference(userId);
 
-        preference.setEventNotificationsEnabled(request.getEventNotificationsEnabled());
-        preference.setTaskNotificationsEnabled(request.getTaskNotificationsEnabled());
-        preference.setRecurringTaskNotificationsEnabled(request.getRecurringTaskNotificationsEnabled());
-        preference.setTaskReminderOneDayBeforeEnabled(request.getTaskReminderOneDayBeforeEnabled());
-        preference.setMonthlyStatsNotificationsEnabled(request.getMonthlyStatsNotificationsEnabled());
+        preference.setEventNotificationsEnabled(
+                safeBool(request.getEventNotificationsEnabled(), true)
+        );
+        preference.setTaskNotificationsEnabled(
+                safeBool(request.getTaskNotificationsEnabled(), true)
+        );
+        preference.setRecurringTaskNotificationsEnabled(
+                safeBool(request.getRecurringTaskNotificationsEnabled(), true)
+        );
+        preference.setTaskReminderOneDayBeforeEnabled(
+                safeBool(request.getTaskReminderOneDayBeforeEnabled(), true)
+        );
+        preference.setMonthlyStatsNotificationsEnabled(
+                safeBool(request.getMonthlyStatsNotificationsEnabled(), false)
+        );
+        preference.setWeeklyResourceNotificationsEnabled(
+                safeBool(request.getWeeklyResourceNotificationsEnabled(), true)
+        );
 
         StudentNotificationPreference saved = preferenceRepository.save(preference);
         return mapToResponse(saved);
@@ -64,19 +77,39 @@ public class StudentNotificationPreferenceServiceImpl
                                     .recurringTaskNotificationsEnabled(true)
                                     .taskReminderOneDayBeforeEnabled(true)
                                     .monthlyStatsNotificationsEnabled(false)
+                                    .weeklyResourceNotificationsEnabled(true)
                                     .build();
 
                     return preferenceRepository.save(newPreference);
                 });
     }
 
-    private StudentNotificationPreferenceResponse mapToResponse(StudentNotificationPreference preference) {
+    private StudentNotificationPreferenceResponse mapToResponse(
+            StudentNotificationPreference preference
+    ) {
         return StudentNotificationPreferenceResponse.builder()
-                .eventNotificationsEnabled(preference.getEventNotificationsEnabled())
-                .taskNotificationsEnabled(preference.getTaskNotificationsEnabled())
-                .recurringTaskNotificationsEnabled(preference.getRecurringTaskNotificationsEnabled())
-                .taskReminderOneDayBeforeEnabled(preference.getTaskReminderOneDayBeforeEnabled())
-                .monthlyStatsNotificationsEnabled(preference.getMonthlyStatsNotificationsEnabled())
+                .eventNotificationsEnabled(
+                        safeBool(preference.getEventNotificationsEnabled(), true)
+                )
+                .taskNotificationsEnabled(
+                        safeBool(preference.getTaskNotificationsEnabled(), true)
+                )
+                .recurringTaskNotificationsEnabled(
+                        safeBool(preference.getRecurringTaskNotificationsEnabled(), true)
+                )
+                .taskReminderOneDayBeforeEnabled(
+                        safeBool(preference.getTaskReminderOneDayBeforeEnabled(), true)
+                )
+                .monthlyStatsNotificationsEnabled(
+                        safeBool(preference.getMonthlyStatsNotificationsEnabled(), false)
+                )
+                .weeklyResourceNotificationsEnabled(
+                        safeBool(preference.getWeeklyResourceNotificationsEnabled(), true)
+                )
                 .build();
+    }
+
+    private Boolean safeBool(Boolean value, boolean defaultValue) {
+        return value != null ? value : defaultValue;
     }
 }

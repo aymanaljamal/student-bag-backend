@@ -382,7 +382,6 @@ public class NotificationServiceImpl implements NotificationService {
                 .map(student -> shouldReceiveStudentNotification(student, type))
                 .orElse(true);
     }
-
     private boolean shouldReceiveStudentNotification(Student student, NotificationType type) {
         if (student == null || type == null) {
             return false;
@@ -404,6 +403,7 @@ public class NotificationServiceImpl implements NotificationService {
             case STUDENT_MESSAGE -> false;
         };
     }
+
     private StudentNotificationPreference getPreferenceOrDefault(Student student) {
         return preferenceRepository.findByStudentId(student.getId())
                 .orElse(
@@ -414,10 +414,10 @@ public class NotificationServiceImpl implements NotificationService {
                                 .recurringTaskNotificationsEnabled(true)
                                 .taskReminderOneDayBeforeEnabled(true)
                                 .monthlyStatsNotificationsEnabled(false)
+                                .weeklyResourceNotificationsEnabled(true)
                                 .build()
                 );
     }
-
     private String buildEventReminderBody(Event event) {
         return "The event \"" + event.getTitle() + "\" starts tomorrow. Tap to open it.";
     }

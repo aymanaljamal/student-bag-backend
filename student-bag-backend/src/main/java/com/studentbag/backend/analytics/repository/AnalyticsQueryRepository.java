@@ -85,55 +85,56 @@ public class AnalyticsQueryRepository {
         }
     }
     public Long resolveStudentIdByEmail(String email) {
-        return countSafe("""
-            SELECT s.id
-            FROM students s
-            JOIN users u ON u.id = s.user_id
-            WHERE u.email = ?
-        """, email);
+        return queryLongSafe("""
+        SELECT s.id
+        FROM students s
+        JOIN users u ON u.id = s.user_id
+        WHERE u.email = ?
+    """, email);
     }
 
     public Long resolveInstructorIdByEmail(String email) {
-        return countSafe("""
-            SELECT i.id
-            FROM instructors i
-            JOIN users u ON u.id = i.user_id
-            WHERE u.email = ?
-        """, email);
+        return queryLongSafe("""
+        SELECT i.id
+        FROM instructors i
+        JOIN users u ON u.id = i.user_id
+        WHERE u.email = ?
+    """, email);
     }
 
     public Long resolveAdministratorIdByEmail(String email) {
-        return countSafe("""
-            SELECT a.id
-            FROM administrators a
-            JOIN users u ON u.id = a.user_id
-            WHERE u.email = ?
-        """, email);
+        return queryLongSafe("""
+        SELECT a.id
+        FROM administrators a
+        JOIN users u ON u.id = a.user_id
+        WHERE u.email = ?
+    """, email);
     }
 
     public Long resolveStudentIdByUserId(UUID userId) {
-        return countSafe("""
-            SELECT id
-            FROM students
-            WHERE user_id = ?
-        """, userId);
+        return queryLongSafe("""
+        SELECT id
+        FROM students
+        WHERE user_id = ?
+    """, userId);
     }
 
     public Long resolveInstructorIdByUserId(UUID userId) {
-        return countSafe("""
-            SELECT id
-            FROM instructors
-            WHERE user_id = ?
-        """, userId);
+        return queryLongSafe("""
+        SELECT id
+        FROM instructors
+        WHERE user_id = ?
+    """, userId);
     }
 
     public Long resolveAdministratorIdByUserId(UUID userId) {
-        return countSafe("""
-            SELECT id
-            FROM administrators
-            WHERE user_id = ?
-        """, userId);
+        return queryLongSafe("""
+        SELECT id
+        FROM administrators
+        WHERE user_id = ?
+    """, userId);
     }
+
 
     // -------------------------------------------------------------------------
     // Student Tasks Analytics
@@ -611,38 +612,47 @@ public class AnalyticsQueryRepository {
             WHERE i.id = ?
         """, instructorId);
     }
-
     public Long countInstructorActiveEvents(Long instructorId) {
         return countSafe("""
-            SELECT COUNT(*)
-            FROM events e
-            JOIN instructors i ON i.user_id = e.created_by_user_id
-            WHERE i.id = ?
-              AND e.start_date_time <= CURRENT_TIMESTAMP
-              AND e.end_date_time >= CURRENT_TIMESTAMP
-        """, instructorId);
+        SELECT COUNT(*)
+        FROM events e
+        JOIN instructors i ON i.user_id = e.created_by_user_id
+        WHERE i.id = ?
+          AND e.start_date_time <= CURRENT_TIMESTAMP
+          AND e.end_date_time >= CURRENT_TIMESTAMP
+          AND e.start_date_time <= e.end_date_time
+    """, instructorId);
     }
-
     public Long countInstructorEndedEvents(Long instructorId) {
         return countSafe("""
-            SELECT COUNT(*)
-            FROM events e
-            JOIN instructors i ON i.user_id = e.created_by_user_id
-            WHERE i.id = ?
-              AND e.end_date_time < CURRENT_TIMESTAMP
-        """, instructorId);
+        SELECT COUNT(*)
+        FROM events e
+        JOIN instructors i ON i.user_id = e.created_by_user_id
+        WHERE i.id = ?
+          AND e.end_date_time < CURRENT_TIMESTAMP
+          AND e.start_date_time <= e.end_date_time
+    """, instructorId);
     }
 
     public Long countInstructorUpcomingEvents(Long instructorId) {
         return countSafe("""
-            SELECT COUNT(*)
-            FROM events e
-            JOIN instructors i ON i.user_id = e.created_by_user_id
-            WHERE i.id = ?
-              AND e.start_date_time > CURRENT_TIMESTAMP
-        """, instructorId);
+        SELECT COUNT(*)
+        FROM events e
+        JOIN instructors i ON i.user_id = e.created_by_user_id
+        WHERE i.id = ?
+          AND e.start_date_time > CURRENT_TIMESTAMP
+          AND e.start_date_time <= e.end_date_time
+    """, instructorId);
     }
-
+    private Long queryLongSafe(String sql, Object... args) {
+        try {
+            Long value = jdbc.queryForObject(sql, Long.class, args);
+            return value == null ? 0L : value;
+        } catch (Exception ex) {
+            log.warn("Analytics long query failed: {}", ex.getMessage());
+            return 0L;
+        }
+    }
     public Long countInstructorOpportunities(Long instructorId) {
         return countSafe("""
             SELECT COUNT(*)
@@ -703,11 +713,9 @@ public class AnalyticsQueryRepository {
     }
     public Long sumInstructorSectionsEnrolled(Long instructorId) {
         return countSafe("""
-        SELECT COUNT(*)
-        FROM enrollments e
-        JOIN course_sections cs ON cs.id = e.course_section_id
-        WHERE cs.instructor_id = ?
-          AND COALESCE(e.status, 'ENROLLED') <> 'CANCELLED'
+        SELECT COALESCE(SUM(enrolled), 0)
+        FROM course_sections
+        WHERE instructor_id = ?
     """, instructorId);
     }
 

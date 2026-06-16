@@ -13,13 +13,12 @@ public class StudentMonthlyReportScheduler {
 
     private final StudentMonthlyReportNotificationService monthlyReportNotificationService;
 
-    // يشتغل أول يوم من كل شهر الساعة 9 صباحاً
-    @Scheduled(cron = "0 0 9 1 * *", zone = "Asia/Jerusalem")
-    public void sendMonthlyReports() {
-        log.info("Starting monthly student report notification dispatch");
+    @Scheduled(cron = "0 0 9 * * MON", zone = "Asia/Jerusalem")
+    public void sendWeeklyReports() {
+        log.info("Starting weekly student report notification dispatch");
 
         monthlyReportNotificationService.dispatchMonthlyReports();
 
-        log.info("Finished monthly student report notification dispatch");
+        log.info("Finished weekly student report notification dispatch");
     }
 }
