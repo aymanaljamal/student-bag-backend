@@ -1,6 +1,7 @@
 package com.studentbag.backend.events.service.impl;
 
 import com.studentbag.backend.common.exception.ResourceNotFoundException;
+import com.studentbag.backend.domain.enums.EventStatus;
 import com.studentbag.backend.domain.enums.UserRole;
 import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
 import com.studentbag.backend.domain.enums.notifications.NotificationChannel;
@@ -9,10 +10,7 @@ import com.studentbag.backend.domain.enums.notifications.NotificationTargetType;
 import com.studentbag.backend.domain.enums.notifications.NotificationType;
 import com.studentbag.backend.domain.enums.schedule.ScheduleSourceType;
 import com.studentbag.backend.domain.enums.schedule.ScheduleStatus;
-import com.studentbag.backend.events.dto.request.EventRegistrantsNotificationRequestDTO;
-import com.studentbag.backend.events.dto.request.EventRegistrationRequestDTO;
-import com.studentbag.backend.events.dto.request.EventRequestDTO;
-import com.studentbag.backend.events.dto.request.EventSearchRequestDTO;
+import com.studentbag.backend.events.dto.request.*;
 import com.studentbag.backend.events.dto.response.EventRegistrationInfoDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;
 import com.studentbag.backend.events.dto.response.OpportunityResponseDTO;
@@ -76,6 +74,8 @@ public class EventServiceImpl implements EventService {
         Event event = eventMapper.toEntity(request);
         event.setInstitution(institution);
         event.setCreatedByUser(creator);
+        event.setStatus(EventStatus.ACTIVE);
+        event.setDeletedAt(null);
 
         if (event.getHost() == null || event.getHost().isBlank()) {
             event.setHost(creator.getFullName());
@@ -86,10 +86,11 @@ public class EventServiceImpl implements EventService {
         Event savedEvent = eventRepository.save(event);
 
         log.info(
-                "Created event id={} institutionId={} createdByUser={} isOpportunity={} hasOpportunity={}",
+                "Created event id={} institutionId={} createdByUser={} status={} isOpportunity={} hasOpportunity={}",
                 savedEvent.getId(),
                 institutionId,
                 creator.getId(),
+                savedEvent.getStatus(),
                 savedEvent.getIsOpportunity(),
                 savedEvent.getOpportunity() != null
         );
@@ -112,10 +113,23 @@ public class EventServiceImpl implements EventService {
 
         validateEventOwnerOrAdmin(existingEvent, currentUser);
 
+        if (resolveEventStatus(existingEvent) == EventStatus.DELETED) {
+            throw new IllegalStateException("Cannot update a deleted event");
+        }
+
         EventChangeSnapshot beforeUpdate = EventChangeSnapshot.from(existingEvent);
+
+        EventStatus previousStatus = existingEvent.getStatus() != null
+                ? existingEvent.getStatus()
+                : EventStatus.ACTIVE;
+        LocalDateTime previousDeletedAt = existingEvent.getDeletedAt();
 
         eventMapper.updateEntity(existingEvent, request);
         existingEvent.setInstitution(institution);
+
+        // Normal edit must not change lifecycle state.
+        existingEvent.setStatus(previousStatus);
+        existingEvent.setDeletedAt(previousDeletedAt);
 
         if (existingEvent.getCreatedByUser() == null) {
             existingEvent.setCreatedByUser(currentUser);
@@ -141,9 +155,10 @@ public class EventServiceImpl implements EventService {
         notifyEventUpdated(savedEvent, currentUser, changedDetails);
 
         log.info(
-                "Updated event id={} updatedByUser={} isOpportunity={} hasOpportunity={} changedDetailsCount={}",
+                "Updated event id={} updatedByUser={} status={} isOpportunity={} hasOpportunity={} changedDetailsCount={}",
                 savedEvent.getId(),
                 currentUser.getId(),
+                savedEvent.getStatus(),
                 savedEvent.getIsOpportunity(),
                 savedEvent.getOpportunity() != null,
                 changedDetails.size()
@@ -159,6 +174,18 @@ public class EventServiceImpl implements EventService {
 
         validateEventOwnerOrAdmin(event, currentUser);
 
+        EventStatus status = resolveEventStatus(event);
+
+        if (status == EventStatus.DELETED) {
+            throw new IllegalStateException("Cannot finish a deleted event");
+        }
+
+        if (status == EventStatus.CANCELLED) {
+            throw new IllegalStateException("Cannot finish a cancelled event. Reopen it first.");
+        }
+
+        event.setStatus(EventStatus.FINISHED);
+        event.setDeletedAt(null);
         event.setEndDateTime(LocalDateTime.now());
 
         Event savedEvent = eventRepository.save(event);
@@ -167,18 +194,18 @@ public class EventServiceImpl implements EventService {
 
         notifyRegisteredStudents(
                 savedEvent,
-                "Event finished",
-                "The event \"" + safeTitle(savedEvent) + "\" has finished.",
-                "/student/events/" + savedEvent.getId()
+                isOpportunityEvent(savedEvent) ? "Opportunity finished" : "Event finished",
+                "The " + eventKind(savedEvent) + " \"" + safeTitle(savedEvent) + "\" has finished.",
+                studentEventRoute(savedEvent)
         );
 
         notifyEventCreator(
                 savedEvent,
-                "Event finished",
-                "Your event \"" + safeTitle(savedEvent) + "\" has finished."
+                isOpportunityEvent(savedEvent) ? "Opportunity finished" : "Event finished",
+                "Your " + eventKind(savedEvent) + " \"" + safeTitle(savedEvent) + "\" has finished."
         );
 
-        log.info("Finished event id={}", savedEvent.getId());
+        log.info("Finished event id={} by user={}", savedEvent.getId(), currentUser.getId());
 
         return buildEventResponse(savedEvent, null);
     }
@@ -190,6 +217,19 @@ public class EventServiceImpl implements EventService {
 
         validateEventOwnerOrAdmin(event, currentUser);
 
+        EventStatus status = resolveEventStatus(event);
+
+        if (status == EventStatus.DELETED) {
+            throw new IllegalStateException("Cannot cancel a deleted event");
+        }
+
+        if (status == EventStatus.CANCELLED) {
+            throw new IllegalStateException("Event is already cancelled");
+        }
+
+        event.setStatus(EventStatus.CANCELLED);
+        event.setDeletedAt(null);
+
         if (event.getEndDateTime() == null || event.getEndDateTime().isAfter(LocalDateTime.now())) {
             event.setEndDateTime(LocalDateTime.now());
         }
@@ -200,18 +240,18 @@ public class EventServiceImpl implements EventService {
 
         notifyRegisteredStudents(
                 savedEvent,
-                "Event cancelled",
-                "The event \"" + safeTitle(savedEvent) + "\" was cancelled.",
-                "/student/events/" + savedEvent.getId()
+                isOpportunityEvent(savedEvent) ? "Opportunity cancelled" : "Event cancelled",
+                "The " + eventKind(savedEvent) + " \"" + safeTitle(savedEvent) + "\" was cancelled.",
+                studentEventRoute(savedEvent)
         );
 
         notifyEventCreator(
                 savedEvent,
-                "Event cancelled",
-                "Your event \"" + safeTitle(savedEvent) + "\" was cancelled."
+                isOpportunityEvent(savedEvent) ? "Opportunity cancelled" : "Event cancelled",
+                "Your " + eventKind(savedEvent) + " \"" + safeTitle(savedEvent) + "\" was cancelled."
         );
 
-        log.info("Cancelled event id={}", savedEvent.getId());
+        log.info("Cancelled event id={} by user={}", savedEvent.getId(), currentUser.getId());
 
         return buildEventResponse(savedEvent, null);
     }
@@ -220,17 +260,33 @@ public class EventServiceImpl implements EventService {
     public void deleteEvent(Long eventId) {
         Event event = getEventByIdOrThrow(eventId);
 
+        if (resolveEventStatus(event) == EventStatus.DELETED) {
+            log.info("Event id={} is already deleted", eventId);
+            return;
+        }
+
         removeEventEntriesFromRegisteredStudentsActiveSchedules(event);
 
-        /*
-         * Hard delete:
-         * هذا للحذف الإداري النهائي فقط.
-         * لو بدك تحافظ على التسجيلات تاريخيًا، استخدم cancelEvent بدل deleteEvent.
-         */
-        registrationRepository.deleteByEventId(eventId);
-        eventRepository.delete(event);
+        // Soft delete: keep registrations/history so admin Deleted tab can show it.
+        event.setStatus(EventStatus.DELETED);
+        event.setDeletedAt(LocalDateTime.now());
 
-        log.info("Deleted event id={}", eventId);
+        Event savedEvent = eventRepository.save(event);
+
+        notifyRegisteredStudents(
+                savedEvent,
+                isOpportunityEvent(savedEvent) ? "Opportunity removed" : "Event removed",
+                "The " + eventKind(savedEvent) + " \"" + safeTitle(savedEvent) + "\" was removed by the administration.",
+                studentCollectionRoute(savedEvent)
+        );
+
+        notifyEventCreator(
+                savedEvent,
+                isOpportunityEvent(savedEvent) ? "Opportunity removed" : "Event removed",
+                "Your " + eventKind(savedEvent) + " \"" + safeTitle(savedEvent) + "\" was removed."
+        );
+
+        log.info("Soft deleted event id={}", eventId);
     }
 
     @Override
@@ -245,6 +301,7 @@ public class EventServiceImpl implements EventService {
     public List<EventResponseDTO> getAllEvents(Long studentId) {
         return eventRepository.findAll()
                 .stream()
+                .filter(event -> isVisibleForRequester(event, studentId))
                 .sorted(Comparator.comparing(
                         Event::getStartDateTime,
                         Comparator.nullsLast(LocalDateTime::compareTo)
@@ -258,6 +315,7 @@ public class EventServiceImpl implements EventService {
     public List<EventResponseDTO> searchEvents(Long studentId, EventSearchRequestDTO request) {
         return eventRepository.findAll()
                 .stream()
+                .filter(event -> isVisibleForRequester(event, studentId))
                 .filter(event -> matchesSearch(event, request))
                 .sorted(buildComparator(request))
                 .map(event -> buildEventResponse(event, studentId))
@@ -272,6 +330,7 @@ public class EventServiceImpl implements EventService {
     ) {
         return eventRepository.findAll()
                 .stream()
+                .filter(event -> isVisibleForRequester(event, studentId))
                 .filter(this::isOpportunityEvent)
                 .filter(event -> matchesSearch(event, request))
                 .sorted(buildComparator(request))
@@ -309,14 +368,18 @@ public class EventServiceImpl implements EventService {
 
         notifyStudent(
                 student,
-                "Event registration confirmed",
+                isOpportunityEvent(event)
+                        ? "Opportunity registration confirmed"
+                        : "Event registration confirmed",
                 "You are registered for \"" + safeTitle(event) + "\".",
-                "/student/events/" + event.getId()
+                studentEventRoute(event)
         );
 
         notifyEventCreator(
                 event,
-                "New event registration",
+                isOpportunityEvent(event)
+                        ? "New opportunity registration"
+                        : "New event registration",
                 studentName(student) + " registered for \"" + safeTitle(event) + "\"."
         );
 
@@ -341,14 +404,18 @@ public class EventServiceImpl implements EventService {
 
         notifyStudent(
                 student,
-                "Event registration cancelled",
+                isOpportunityEvent(event)
+                        ? "Opportunity registration cancelled"
+                        : "Event registration cancelled",
                 "Your registration for \"" + safeTitle(event) + "\" was cancelled.",
-                "/student/events/" + eventId
+                studentEventRoute(event)
         );
 
         notifyEventCreator(
                 event,
-                "Event registration cancelled",
+                isOpportunityEvent(event)
+                        ? "Opportunity registration cancelled"
+                        : "Event registration cancelled",
                 studentName(student) + " cancelled registration for \"" + safeTitle(event) + "\"."
         );
 
@@ -394,8 +461,117 @@ public class EventServiceImpl implements EventService {
         log.info("Sync with university API requested for institutionId={}", institutionId);
     }
 
+    @Override
+    public void notifyEventRegistrants(
+            Long eventId,
+            EventRegistrantsNotificationRequestDTO request,
+            String currentUserEmail
+    ) {
+        Event event = getEventByIdOrThrow(eventId);
+        User currentUser = getUserByEmail(currentUserEmail);
+
+        validateEventOwnerOrAdmin(event, currentUser);
+
+        String message = request.getMessage() == null
+                ? ""
+                : request.getMessage().trim();
+
+        if (message.isBlank()) {
+            throw new IllegalArgumentException("Notification message must not be blank");
+        }
+
+        if (message.length() < 3) {
+            throw new IllegalArgumentException("Notification message is too short");
+        }
+
+        if (message.length() > 500) {
+            throw new IllegalArgumentException("Notification message is too long");
+        }
+
+        String title = isOpportunityEvent(event)
+                ? "Opportunity update"
+                : "Event update";
+
+        notifyRegisteredStudents(
+                event,
+                title + ": " + safeTitle(event),
+                message,
+                studentEventRoute(event)
+        );
+
+        log.info(
+                "Manual notification sent to registered students for event id={} by user={}",
+                eventId,
+                currentUser.getId()
+        );
+    }
+
+    @Override
+    public EventResponseDTO reopenEvent(
+            Long eventId,
+            EventReopenRequestDTO request,
+            String currentUserEmail
+    ) {
+        User currentUser = getUserByEmail(currentUserEmail);
+        Event event = getEventByIdOrThrow(eventId);
+
+        validateEventOwnerOrAdmin(event, currentUser);
+
+        if (request == null || request.getEndDateTime() == null) {
+            throw new IllegalArgumentException("New end date/time is required to reopen the event");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        if (!request.getEndDateTime().isAfter(now)) {
+            throw new IllegalArgumentException("New end date/time must be in the future");
+        }
+
+        LocalDateTime newStartDateTime = request.getStartDateTime() != null
+                ? request.getStartDateTime()
+                : event.getStartDateTime();
+
+        if (newStartDateTime == null) {
+            throw new IllegalArgumentException("Start date/time is required to reopen the event");
+        }
+
+        if (request.getEndDateTime().isBefore(newStartDateTime)) {
+            throw new IllegalArgumentException("End date/time must be after start date/time");
+        }
+
+        event.setStartDateTime(newStartDateTime);
+        event.setEndDateTime(request.getEndDateTime());
+        event.setStatus(EventStatus.ACTIVE);
+        event.setDeletedAt(null);
+
+        Event savedEvent = eventRepository.save(event);
+
+        refreshEventEntriesInActiveSchedules(savedEvent);
+
+        notifyRegisteredStudents(
+                savedEvent,
+                isOpportunityEvent(savedEvent) ? "Opportunity reopened" : "Event reopened",
+                "The " + eventKind(savedEvent) + " \"" + safeTitle(savedEvent) + "\" has been reopened.",
+                studentEventRoute(savedEvent)
+        );
+
+        notifyEventCreator(
+                savedEvent,
+                isOpportunityEvent(savedEvent) ? "Opportunity reopened" : "Event reopened",
+                "Your " + eventKind(savedEvent) + " \"" + safeTitle(savedEvent) + "\" has been reopened."
+        );
+
+        log.info("Reopened event id={} by user={}", savedEvent.getId(), currentUser.getId());
+
+        return buildEventResponse(savedEvent, null);
+    }
+
     private void addEventEntryToActiveSchedule(Event event, Student student) {
         if (event == null || student == null || student.getId() == null) {
+            return;
+        }
+
+        if (!canAppearInActiveSchedule(event)) {
             return;
         }
 
@@ -509,7 +685,7 @@ public class EventServiceImpl implements EventService {
 
             removeEventEntryFromActiveSchedule(event.getId(), student.getId());
 
-            if (!isEventEnded(event)) {
+            if (canAppearInActiveSchedule(event)) {
                 addEventEntryToActiveSchedule(event, student);
             }
         }
@@ -529,14 +705,14 @@ public class EventServiceImpl implements EventService {
                 && Objects.equals(event.getCreatedByUser().getId(), updatedBy.getId());
 
         String baseStudentBody = updatedByAdmin
-                ? "The event \"" + safeTitle(event) + "\" has been updated by the administration."
-                : "The event \"" + safeTitle(event) + "\" has been updated.";
+                ? "The " + eventKind(event) + " \"" + safeTitle(event) + "\" has been updated by the administration."
+                : "The " + eventKind(event) + " \"" + safeTitle(event) + "\" has been updated.";
 
         String changesSummary = buildChangesSummary(changedDetails);
 
         notifyRegisteredStudents(
                 event,
-                "Event updated: " + safeTitle(event),
+                capitalize(eventKind(event)) + " updated: " + safeTitle(event),
                 baseStudentBody + changesSummary,
                 studentEventRoute(event)
         );
@@ -544,8 +720,9 @@ public class EventServiceImpl implements EventService {
         if (updatedByAdmin && !updatedByCreator) {
             notifyEventCreator(
                     event,
-                    "Your event was updated by admin",
-                    "An administrator updated your event \"" + safeTitle(event) + "\"." + changesSummary
+                    "Your " + eventKind(event) + " was updated by admin",
+                    "An administrator updated your " + eventKind(event) + " \""
+                            + safeTitle(event) + "\"." + changesSummary
             );
         }
     }
@@ -570,7 +747,6 @@ public class EventServiceImpl implements EventService {
         addChange(changes, "End time", before.endDateTime, after.endDateTime);
         addChange(changes, "Requires registration", before.requiresRegistration, after.requiresRegistration);
         addChange(changes, "Opportunity", before.isOpportunity, after.isOpportunity);
-
         addChange(changes, "Company name", before.opportunityCompanyName, after.opportunityCompanyName);
         addChange(changes, "Role title", before.opportunityRoleTitle, after.opportunityRoleTitle);
         addChange(changes, "Opportunity field", before.opportunityField, after.opportunityField);
@@ -599,7 +775,7 @@ public class EventServiceImpl implements EventService {
 
     private String buildChangesSummary(List<String> changedDetails) {
         if (changedDetails == null || changedDetails.isEmpty()) {
-            return " No visible event details were changed.";
+            return " No visible details were changed.";
         }
 
         int maxVisibleChanges = 6;
@@ -671,6 +847,14 @@ public class EventServiceImpl implements EventService {
         }
 
         return "/student/events/" + event.getId();
+    }
+
+    private String studentCollectionRoute(Event event) {
+        if (isOpportunityEvent(event)) {
+            return "/student/opportunities";
+        }
+
+        return "/student/events";
     }
 
     private void notifyRegisteredStudents(
@@ -833,6 +1017,10 @@ public class EventServiceImpl implements EventService {
     }
 
     private void validateEventDates(EventRequestDTO request) {
+        if (request == null) {
+            throw new IllegalArgumentException("Event request is required");
+        }
+
         if (request.getStartDateTime() != null
                 && request.getEndDateTime() != null
                 && request.getEndDateTime().isBefore(request.getStartDateTime())) {
@@ -843,7 +1031,6 @@ public class EventServiceImpl implements EventService {
     private void applyOpportunityDetails(Event event, EventRequestDTO request) {
         boolean markedAsOpportunity = Boolean.TRUE.equals(request.getIsOpportunity());
         boolean hasOpportunityDetails = request.getOpportunityDetails() != null;
-
         boolean shouldBeOpportunity = markedAsOpportunity || hasOpportunityDetails;
 
         event.setIsOpportunity(shouldBeOpportunity);
@@ -869,21 +1056,27 @@ public class EventServiceImpl implements EventService {
             opportunity.setEvent(event);
         }
 
-        opportunity.setCompanyName(request.getOpportunityDetails().getCompanyName());
-        opportunity.setRoleTitle(request.getOpportunityDetails().getRoleTitle());
-        opportunity.setField(request.getOpportunityDetails().getField());
+        opportunity.setCompanyName(clean(request.getOpportunityDetails().getCompanyName()));
+        opportunity.setRoleTitle(clean(request.getOpportunityDetails().getRoleTitle()));
+        opportunity.setField(clean(request.getOpportunityDetails().getField()));
         opportunity.setIsPaid(Boolean.TRUE.equals(request.getOpportunityDetails().getIsPaid()));
-        opportunity.setWorkMode(request.getOpportunityDetails().getWorkMode());
+        opportunity.setWorkMode(clean(request.getOpportunityDetails().getWorkMode()));
         opportunity.setApplicationDeadline(request.getOpportunityDetails().getApplicationDeadline());
         opportunity.setDurationWeeks(request.getOpportunityDetails().getDurationWeeks());
-        opportunity.setApplicationUrl(request.getOpportunityDetails().getApplicationUrl());
+        opportunity.setApplicationUrl(clean(request.getOpportunityDetails().getApplicationUrl()));
 
         event.setOpportunity(opportunity);
     }
 
     private EventResponseDTO buildEventResponse(Event event, Long studentId) {
         EventResponseDTO response = eventMapper.toResponseDTO(event, studentId);
+        EventStatus status = resolveEventStatus(event);
+
+        response.setStatus(status);
         response.setIsEnded(isEventEnded(event));
+        response.setIsCancelled(status == EventStatus.CANCELLED);
+        response.setIsDeleted(status == EventStatus.DELETED);
+        response.setDeletedAt(event != null ? event.getDeletedAt() : null);
 
         if (studentId == null) {
             return response;
@@ -896,6 +1089,10 @@ public class EventServiceImpl implements EventService {
     }
 
     private void validateRegistration(Event event, Long studentId) {
+        if (resolveEventStatus(event) != EventStatus.ACTIVE) {
+            throw new IllegalStateException("Cannot register for an event that is not active");
+        }
+
         if (Boolean.FALSE.equals(event.getRequiresRegistration())) {
             throw new IllegalStateException("This event does not require registration");
         }
@@ -914,8 +1111,58 @@ public class EventServiceImpl implements EventService {
     }
 
     private boolean isEventEnded(Event event) {
-        return event.getEndDateTime() != null
+        EventStatus status = resolveEventStatus(event);
+
+        if (status == EventStatus.FINISHED
+                || status == EventStatus.CANCELLED
+                || status == EventStatus.DELETED) {
+            return true;
+        }
+
+        return event != null
+                && event.getEndDateTime() != null
                 && !event.getEndDateTime().isAfter(LocalDateTime.now());
+    }
+
+    private boolean hasEndedByDateTime(Event event) {
+        return event != null
+                && event.getEndDateTime() != null
+                && !event.getEndDateTime().isAfter(LocalDateTime.now());
+    }
+
+    private boolean canAppearInActiveSchedule(Event event) {
+        return resolveEventStatus(event) == EventStatus.ACTIVE
+                && !hasEndedByDateTime(event);
+    }
+
+    private EventStatus resolveEventStatus(Event event) {
+        if (event == null) {
+            return EventStatus.DELETED;
+        }
+
+        EventStatus storedStatus = event.getStatus() != null
+                ? event.getStatus()
+                : EventStatus.ACTIVE;
+
+        if (storedStatus == EventStatus.DELETED
+                || storedStatus == EventStatus.CANCELLED
+                || storedStatus == EventStatus.FINISHED) {
+            return storedStatus;
+        }
+
+        if (hasEndedByDateTime(event)) {
+            return EventStatus.FINISHED;
+        }
+
+        return EventStatus.ACTIVE;
+    }
+
+    private boolean isVisibleForRequester(Event event, Long studentId) {
+        if (studentId == null) {
+            return true;
+        }
+
+        return resolveEventStatus(event) != EventStatus.DELETED;
     }
 
     private boolean isOpportunityEvent(Event event) {
@@ -952,7 +1199,7 @@ public class EventServiceImpl implements EventService {
         boolean upcomingMatches =
                 request.getUpcomingOnly() == null
                         || !request.getUpcomingOnly()
-                        || event.isUpcoming();
+                        || resolveEventStatus(event) == EventStatus.ACTIVE;
 
         boolean registrationMatches =
                 request.getRequiresRegistration() == null
@@ -1117,53 +1364,17 @@ public class EventServiceImpl implements EventService {
         return "A student";
     }
 
-    @Override
-    public void notifyEventRegistrants(
-            Long eventId,
-            EventRegistrantsNotificationRequestDTO request,
-            String currentUserEmail
-    ) {
-        Event event = getEventByIdOrThrow(eventId);
-        User currentUser = getUserByEmail(currentUserEmail);
+    private String eventKind(Event event) {
+        return isOpportunityEvent(event) ? "opportunity" : "event";
+    }
 
-        validateEventOwnerOrAdmin(event, currentUser);
-
-        String message = request.getMessage() == null
-                ? ""
-                : request.getMessage().trim();
-
-        if (message.isBlank()) {
-            throw new IllegalArgumentException("Notification message must not be blank");
+    private String capitalize(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
         }
 
-        if (message.length() < 3) {
-            throw new IllegalArgumentException("Notification message is too short");
-        }
-
-        if (message.length() > 500) {
-            throw new IllegalArgumentException("Notification message is too long");
-        }
-
-        String title = isOpportunityEvent(event)
-                ? "Opportunity update"
-                : "Event update";
-
-        String route = isOpportunityEvent(event)
-                ? "/student/opportunities/" + event.getId()
-                : "/student/events/" + event.getId();
-
-        notifyRegisteredStudents(
-                event,
-                title + ": " + safeTitle(event),
-                message,
-                route
-        );
-
-        log.info(
-                "Manual notification sent to registered students for event id={} by user={}",
-                eventId,
-                currentUser.getId()
-        );
+        String trimmed = value.trim();
+        return trimmed.substring(0, 1).toUpperCase() + trimmed.substring(1);
     }
 
     private boolean containsIgnoreCase(String value, String query) {
@@ -1174,6 +1385,15 @@ public class EventServiceImpl implements EventService {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private String clean(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String trimmed = value.trim();
+        return trimmed.isBlank() ? null : trimmed;
     }
 
     private static final class EventChangeSnapshot {
@@ -1187,7 +1407,6 @@ public class EventServiceImpl implements EventService {
         private LocalDateTime endDateTime;
         private Boolean requiresRegistration;
         private Boolean isOpportunity;
-
         private String opportunityCompanyName;
         private String opportunityRoleTitle;
         private String opportunityField;

@@ -1,8 +1,9 @@
 package com.studentbag.backend.events.entity;
 
 import com.studentbag.backend.common.entity.BaseEntity;
-import com.studentbag.backend.domain.enums.schedule.EventType;
+import com.studentbag.backend.domain.enums.EventStatus;
 import com.studentbag.backend.domain.enums.courses.RegistrationStatus;
+import com.studentbag.backend.domain.enums.schedule.EventType;
 import com.studentbag.backend.institution.entity.Institution;
 import com.studentbag.backend.users.entity.User;
 import jakarta.persistence.*;
@@ -28,11 +29,21 @@ public class Event extends BaseEntity {
     @Column(nullable = false)
     private String title;
 
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false)
+    private EventStatus status = EventStatus.ACTIVE;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     @Column(columnDefinition = "TEXT")
     private String description;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_user_id")
     private User createdByUser;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "event_type", nullable = false)
     private EventType eventType;
@@ -68,7 +79,6 @@ public class Event extends BaseEntity {
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<EventRegistration> registrations = new ArrayList<>();
 
-    // --- Helper Methods ---
     public void setOpportunity(Opportunity opportunity) {
         if (opportunity == null) {
             if (this.opportunity != null) {
@@ -77,33 +87,72 @@ public class Event extends BaseEntity {
         } else {
             opportunity.setEvent(this);
         }
+
         this.opportunity = opportunity;
     }
 
     public void addRegistration(EventRegistration registration) {
+        if (registration == null) {
+            return;
+        }
+
+        if (registrations == null) {
+            registrations = new ArrayList<>();
+        }
+
         registrations.add(registration);
         registration.setEvent(this);
     }
 
-    // --- Business Logic ---
     public boolean hasCapacity() {
-        if (maxParticipants == null) return true;
+        if (maxParticipants == null) {
+            return true;
+        }
+
+        if (registrations == null || registrations.isEmpty()) {
+            return maxParticipants > 0;
+        }
+
         long currentCount = registrations.stream()
-                .filter(r -> r.getStatus() == RegistrationStatus.REGISTERED
-                        || r.getStatus() == RegistrationStatus.CHECKED_IN)
+                .filter(registration ->
+                        registration.getStatus() == RegistrationStatus.REGISTERED
+                                || registration.getStatus() == RegistrationStatus.CHECKED_IN
+                )
                 .count();
+
         return currentCount < maxParticipants;
     }
 
     public boolean isUpcoming() {
-        return LocalDateTime.now().isBefore(startDateTime);
+        return startDateTime != null && LocalDateTime.now().isBefore(startDateTime);
+    }
+
+    public boolean isSoftDeleted() {
+        return status == EventStatus.DELETED;
+    }
+
+    public boolean isCancelled() {
+        return status == EventStatus.CANCELLED;
+    }
+
+    public boolean isFinished() {
+        return status == EventStatus.FINISHED;
+    }
+
+    public boolean isActive() {
+        return status == null || status == EventStatus.ACTIVE;
     }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof Event)) return false;
-        Event other = (Event) o;
+        if (this == o) {
+            return true;
+        }
+
+        if (!(o instanceof Event other)) {
+            return false;
+        }
+
         return getId() != null && getId().equals(other.getId());
     }
 
