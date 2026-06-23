@@ -1,9 +1,6 @@
 package com.studentbag.backend.events.service;
 
-import com.studentbag.backend.events.dto.request.EventRegistrantsNotificationRequestDTO;
-import com.studentbag.backend.events.dto.request.EventRegistrationRequestDTO;
-import com.studentbag.backend.events.dto.request.EventRequestDTO;
-import com.studentbag.backend.events.dto.request.EventSearchRequestDTO;
+import com.studentbag.backend.events.dto.request.*;
 import com.studentbag.backend.events.dto.response.EventRegistrationInfoDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;
 import com.studentbag.backend.events.dto.response.OpportunityResponseDTO;
@@ -24,7 +21,11 @@ public interface EventService {
             Long institutionId,
             String currentUserEmail
     );
-
+    EventResponseDTO reopenEvent(
+            Long eventId,
+            EventReopenRequestDTO request,
+            String currentUserEmail
+    );
     EventResponseDTO finishEvent(Long eventId, String currentUserEmail);
 
     EventResponseDTO cancelEvent(Long eventId, String currentUserEmail);

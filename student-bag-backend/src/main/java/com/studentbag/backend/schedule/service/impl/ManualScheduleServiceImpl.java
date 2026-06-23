@@ -193,7 +193,6 @@ public class ManualScheduleServiceImpl implements ManualScheduleService {
 
         return scheduleMapper.toResponseDTO(savedSchedule);
     }
-
     @Override
     @Transactional
     public StudentScheduleResponseDTO deleteEntry(
@@ -209,15 +208,30 @@ public class ManualScheduleServiceImpl implements ManualScheduleService {
                 .findFirst()
                 .orElseThrow(() -> new RuntimeException("Schedule entry not found"));
 
-        if (entry.getSourceType() != ScheduleSourceType.MANUAL) {
-            throw new RuntimeException("Only manual schedule entries can be deleted here");
+        boolean isManualEntry =
+                entry.getSourceType() == ScheduleSourceType.MANUAL;
+
+        boolean isEndedEventEntry =
+                entry.getSourceType() == ScheduleSourceType.EVENT
+                        && entry.getEndDateTime() != null
+                        && entry.getEndDateTime().isBefore(LocalDateTime.now());
+
+        if (!isManualEntry && !isEndedEventEntry) {
+            throw new RuntimeException(
+                    "Only manual entries or ended event entries can be deleted here"
+            );
         }
 
         schedule.getEntries().remove(entry);
 
         StudentSchedule savedSchedule = scheduleRepository.save(schedule);
 
-        log.info("Manual entry {} deleted from schedule {}", entryId, scheduleId);
+        log.info(
+                "Schedule entry {} with source type {} deleted from schedule {}",
+                entryId,
+                entry.getSourceType(),
+                scheduleId
+        );
 
         return scheduleMapper.toResponseDTO(savedSchedule);
     }

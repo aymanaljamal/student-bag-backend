@@ -1,9 +1,6 @@
 package com.studentbag.backend.events.controller;
 
-import com.studentbag.backend.events.dto.request.EventRegistrantsNotificationRequestDTO;
-import com.studentbag.backend.events.dto.request.EventRegistrationRequestDTO;
-import com.studentbag.backend.events.dto.request.EventRequestDTO;
-import com.studentbag.backend.events.dto.request.EventSearchRequestDTO;
+import com.studentbag.backend.events.dto.request.*;
 import com.studentbag.backend.events.dto.response.EventRegistrationInfoDTO;
 import com.studentbag.backend.events.dto.response.EventResponseDTO;
 import com.studentbag.backend.events.dto.response.OpportunityResponseDTO;
@@ -45,7 +42,20 @@ public class EventController {
 
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
+    @PatchMapping("/{eventId}/reopen")
+    public ResponseEntity<EventResponseDTO> reopenEvent(
+            @PathVariable Long eventId,
+            @RequestBody EventReopenRequestDTO request,
+            Authentication authentication
+    ) {
+        EventResponseDTO response = eventService.reopenEvent(
+                eventId,
+                request,
+                authentication.getName()
+        );
 
+        return ResponseEntity.ok(response);
+    }
     @PreAuthorize("hasAnyRole('ADMINISTRATOR','INSTRUCTOR')")
     @PutMapping("/{eventId}")
     public ResponseEntity<EventResponseDTO> updateEvent(
