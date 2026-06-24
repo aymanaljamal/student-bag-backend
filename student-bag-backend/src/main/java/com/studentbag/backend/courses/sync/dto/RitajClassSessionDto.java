@@ -10,7 +10,11 @@ public class RitajClassSessionDto {
     private DayOfWeek dayOfWeek;
     private LocalTime startTime;
     private LocalTime endTime;
+
     private String room;
     private String building;
     private String campus;
+
+    private String sessionInternalId;
+    private Boolean isGeneratedSession;
 }

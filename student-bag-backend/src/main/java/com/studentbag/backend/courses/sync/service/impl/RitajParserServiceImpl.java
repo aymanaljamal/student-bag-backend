@@ -1,6 +1,5 @@
 package com.studentbag.backend.courses.sync.service.impl;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studentbag.backend.courses.sync.dto.RitajClassSessionDto;
@@ -13,17 +12,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
 import java.time.LocalTime;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
-/**
- * يقرأ ملف JSON المدمج (courses_v5.json) ويحوّله إلى قائمة RitajCourseDto.
- *
- * ملاحظات التصميم:
- * - مواد SP.TOP: نفس الكود بأسماء مختلفة → كل اسم entry مستقلة.
- * - أكثر من مدرس: الأسماء تكون comma-separated في nameArabic/nameEnglish.
- * - المختبر (Lab): يحتفظ بـ parentLectureSectionNumber ليُربط لاحقاً في SyncService.
- * - الغرف: كل session تحمل building + room منفصلَين (قد تختلف يوماً بيوم).
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -31,34 +23,56 @@ public class RitajParserServiceImpl implements RitajParserService {
 
     private final ObjectMapper objectMapper;
 
-    // ---- JSON field names (كما في courses_v5.json) ----
-    private static final String F_CODE             = "code";
-    private static final String F_NAME_AR          = "nameArabic";
-    private static final String F_NAME_EN          = "nameEnglish";
-    private static final String F_ACADEMIC_LEVEL   = "academicLevel";
-    private static final String F_CREDIT_HOURS     = "creditHours";
-    private static final String F_FAC_AR           = "facultyNameArabic";
-    private static final String F_FAC_EN           = "facultyNameEnglish";
-    private static final String F_DEPT_AR          = "departmentNameArabic";
-    private static final String F_DEPT_EN          = "departmentNameEnglish";
-    private static final String F_PROG_AR          = "programNameArabic";
-    private static final String F_PROG_EN          = "programNameEnglish";
-    private static final String F_SECTIONS         = "sections";
-    private static final String F_SEC_NUM          = "sectionNumber";
-    private static final String F_SEC_TYPE         = "sectionType";
-    private static final String F_INSTR_AR         = "instructorNameArabic";
-    private static final String F_INSTR_EN         = "instructorNameEnglish";
-    private static final String F_ENROLLED         = "enrolled";
-    private static final String F_CAPACITY         = "capacity";
-    private static final String F_PARENT_SEC       = "parentLectureSectionNumber";
-    private static final String F_SESSIONS         = "sessions";
-    private static final String F_DAY              = "dayOfWeek";
-    private static final String F_START            = "startTime";
-    private static final String F_END              = "endTime";
-    private static final String F_ROOM             = "room";
-    private static final String F_BUILDING         = "building";
-    private static final String F_CAMPUS           = "campus";
-    private static final String F_COURSE_CODE      = "courseCode";
+    private static final String F_EXTERNAL_ID = "externalId";
+    private static final String F_CODE = "code";
+    private static final String F_COURSE_INTERNAL_ID = "courseInternalId";
+
+    private static final String F_NAME_AR = "nameArabic";
+    private static final String F_NAME_EN = "nameEnglish";
+
+    private static final String F_DESCRIPTION = "description";
+    private static final String F_DESC_AR = "descriptionArabic";
+    private static final String F_DESC_EN = "descriptionEnglish";
+
+    private static final String F_ACADEMIC_LEVEL = "academicLevel";
+    private static final String F_CREDIT_HOURS = "creditHours";
+
+    private static final String F_FAC_EXT_ID = "facultyExternalId";
+    private static final String F_DEPT_EXT_ID = "departmentExternalId";
+
+    private static final String F_FAC_AR = "facultyNameArabic";
+    private static final String F_FAC_EN = "facultyNameEnglish";
+    private static final String F_DEPT_AR = "departmentNameArabic";
+    private static final String F_DEPT_EN = "departmentNameEnglish";
+
+    private static final String F_PROG_AR = "programNameArabic";
+    private static final String F_PROG_EN = "programNameEnglish";
+
+    private static final String F_IS_GENERATED_NAME = "isGeneratedName";
+    private static final String F_IS_GENERATED_DESCRIPTION = "isGeneratedDescription";
+    private static final String F_IS_LAB_COURSE = "isLabCourse";
+
+    private static final String F_SECTIONS = "sections";
+    private static final String F_SECTION_INTERNAL_ID = "sectionInternalId";
+    private static final String F_SEC_NUM = "sectionNumber";
+    private static final String F_SEC_TYPE = "sectionType";
+    private static final String F_INSTR_AR = "instructorNameArabic";
+    private static final String F_INSTR_EN = "instructorNameEnglish";
+    private static final String F_COURSE_CODE = "courseCode";
+    private static final String F_ENROLLED = "enrolled";
+    private static final String F_CAPACITY = "capacity";
+    private static final String F_PARENT_SEC = "parentLectureSectionNumber";
+    private static final String F_IS_GENERATED_CAPACITY = "isGeneratedCapacity";
+
+    private static final String F_SESSIONS = "sessions";
+    private static final String F_DAY = "dayOfWeek";
+    private static final String F_START = "startTime";
+    private static final String F_END = "endTime";
+    private static final String F_ROOM = "room";
+    private static final String F_BUILDING = "building";
+    private static final String F_CAMPUS = "campus";
+    private static final String F_SESSION_INTERNAL_ID = "sessionInternalId";
+    private static final String F_IS_GENERATED_SESSION = "isGeneratedSession";
 
     @Override
     public List<RitajCourseDto> parseJson(String jsonContent) {
@@ -82,7 +96,7 @@ public class RitajParserServiceImpl implements RitajParserService {
                 }
             }
 
-            log.info("✅ [Parser] تم تحليل {} مساق من JSON", result.size());
+            log.info("✅ [Parser] تم تحليل {} مساق من JSON normalized", result.size());
 
         } catch (Exception e) {
             log.error("❌ [Parser] فشل تحليل JSON: {}", e.getMessage(), e);
@@ -92,139 +106,219 @@ public class RitajParserServiceImpl implements RitajParserService {
         return result;
     }
 
-    // ---- Core parsing ----
-
     private RitajCourseDto parseCourseNode(JsonNode node) {
         String code = text(node, F_CODE);
         if (code == null) return null;
 
         RitajCourseDto dto = new RitajCourseDto();
+
         dto.setCode(code);
-        dto.setExternalId(code);
+        dto.setCourseInternalId(text(node, F_COURSE_INTERNAL_ID));
+        dto.setExternalId(firstNonBlank(
+                text(node, F_EXTERNAL_ID),
+                dto.getCourseInternalId(),
+                code
+        ));
+
         dto.setNameArabic(text(node, F_NAME_AR));
         dto.setNameEnglish(text(node, F_NAME_EN));
+
+        dto.setDescription(text(node, F_DESCRIPTION));
+        dto.setDescriptionArabic(text(node, F_DESC_AR));
+        dto.setDescriptionEnglish(text(node, F_DESC_EN));
+
         dto.setAcademicLevel(text(node, F_ACADEMIC_LEVEL));
         dto.setCreditHours(intVal(node, F_CREDIT_HOURS));
+
+        dto.setFacultyExternalId(text(node, F_FAC_EXT_ID));
+        dto.setDepartmentExternalId(text(node, F_DEPT_EXT_ID));
+
         dto.setFacultyNameArabic(text(node, F_FAC_AR));
         dto.setFacultyNameEnglish(text(node, F_FAC_EN));
         dto.setDepartmentNameArabic(text(node, F_DEPT_AR));
         dto.setDepartmentNameEnglish(text(node, F_DEPT_EN));
+
         dto.setProgramNameArabic(text(node, F_PROG_AR));
         dto.setProgramNameEnglish(text(node, F_PROG_EN));
 
+        dto.setIsGeneratedName(boolVal(node, F_IS_GENERATED_NAME));
+        dto.setIsGeneratedDescription(boolVal(node, F_IS_GENERATED_DESCRIPTION));
+        dto.setIsLabCourse(boolVal(node, F_IS_LAB_COURSE));
+
         List<RitajSectionDto> sections = new ArrayList<>();
-        JsonNode secArray = node.path(F_SECTIONS);
-        if (secArray.isArray()) {
-            for (JsonNode secNode : secArray) {
-                RitajSectionDto sec = parseSectionNode(secNode, code);
-                if (sec != null) sections.add(sec);
+        JsonNode sectionArray = node.path(F_SECTIONS);
+
+        if (sectionArray.isArray()) {
+            for (JsonNode sectionNode : sectionArray) {
+                RitajSectionDto section = parseSectionNode(sectionNode, code);
+                if (section != null) {
+                    sections.add(section);
+                }
             }
         }
+
         dto.setSections(sections);
 
         return dto;
     }
 
-    private RitajSectionDto parseSectionNode(JsonNode node, String courseCode) {
-        RitajSectionDto sec = new RitajSectionDto();
+    private RitajSectionDto parseSectionNode(JsonNode node, String fallbackCourseCode) {
+        RitajSectionDto section = new RitajSectionDto();
 
-        String secNum  = text(node, F_SEC_NUM);
-        String secType = text(node, F_SEC_TYPE);
+        String sectionNumber = firstNonBlank(text(node, F_SEC_NUM), "1");
+        String sectionType = firstNonBlank(text(node, F_SEC_TYPE), "Lecture");
+        String courseCode = firstNonBlank(text(node, F_COURSE_CODE), fallbackCourseCode);
 
-        sec.setSectionNumber(secNum != null ? secNum : "1");
-        sec.setSectionType(secType != null ? secType : "Lecture");
-        sec.setCourseCode(courseCode);
+        section.setSectionNumber(sectionNumber);
+        section.setSectionType(sectionType);
+        section.setCourseCode(courseCode);
 
-        // أسماء المدرسين — قد تكون comma-separated لأكثر من مدرس
-        sec.setInstructorNameArabic(text(node, F_INSTR_AR));
-        sec.setInstructorNameEnglish(text(node, F_INSTR_EN));
+        section.setSectionInternalId(text(node, F_SECTION_INTERNAL_ID));
+        section.setExternalId(firstNonBlank(
+                text(node, F_EXTERNAL_ID),
+                section.getSectionInternalId(),
+                courseCode + "-" + sectionType + "-" + sectionNumber
+        ));
 
-        sec.setEnrolled(intVal(node, F_ENROLLED));
-        sec.setCapacity(intVal(node, F_CAPACITY));
+        section.setInstructorNameArabic(text(node, F_INSTR_AR));
+        section.setInstructorNameEnglish(text(node, F_INSTR_EN));
 
-        // parentLectureSectionNumber → للمختبرات
-        sec.setParentLectureSectionNumber(text(node, F_PARENT_SEC));
+        section.setCapacity(intVal(node, F_CAPACITY));
+        section.setEnrolled(intVal(node, F_ENROLLED));
 
-        // ExternalId = courseCode_sectionNumber_sectionType
-        sec.setExternalId(courseCode + "_" + sec.getSectionNumber() + "_" + sec.getSectionType());
+        section.setParentLectureSectionNumber(text(node, F_PARENT_SEC));
+        section.setIsGeneratedCapacity(boolVal(node, F_IS_GENERATED_CAPACITY));
 
-        // Sessions
         List<RitajClassSessionDto> sessions = new ArrayList<>();
-        JsonNode sessArray = node.path(F_SESSIONS);
-        if (sessArray.isArray()) {
-            for (JsonNode sessNode : sessArray) {
-                RitajClassSessionDto sess = parseSessionNode(sessNode);
-                if (sess != null) sessions.add(sess);
+        JsonNode sessionArray = node.path(F_SESSIONS);
+
+        if (sessionArray.isArray()) {
+            for (JsonNode sessionNode : sessionArray) {
+                RitajClassSessionDto session = parseSessionNode(sessionNode);
+                if (session != null) {
+                    sessions.add(session);
+                }
             }
         }
-        sec.setSessions(sessions);
 
-        return sec;
+        section.setSessions(sessions);
+
+        return section;
     }
 
     private RitajClassSessionDto parseSessionNode(JsonNode node) {
         String dayStr = text(node, F_DAY);
-        if (dayStr == null) return null;
+        if (dayStr == null) {
+            return null;
+        }
 
-        DayOfWeek day;
+        DayOfWeek dayOfWeek;
         try {
-            day = DayOfWeek.valueOf(dayStr.toUpperCase());
-        } catch (IllegalArgumentException e) {
+            dayOfWeek = DayOfWeek.valueOf(dayStr.trim().toUpperCase());
+        } catch (Exception e) {
             log.warn("⚠️ [Parser] يوم غير معروف: {}", dayStr);
             return null;
         }
 
-        RitajClassSessionDto sess = new RitajClassSessionDto();
-        sess.setDayOfWeek(day);
-        sess.setStartTime(parseTime(text(node, F_START)));
-        sess.setEndTime(parseTime(text(node, F_END)));
-        sess.setRoom(text(node, F_ROOM));
-        sess.setBuilding(text(node, F_BUILDING));
-        sess.setCampus(text(node, F_CAMPUS));
+        LocalTime startTime = parseTime(text(node, F_START));
+        LocalTime endTime = parseTime(text(node, F_END));
 
-        return sess;
+        if (startTime == null || endTime == null) {
+            log.warn("⚠️ [Parser] وقت غير صالح: start={}, end={}", text(node, F_START), text(node, F_END));
+            return null;
+        }
+
+        RitajClassSessionDto session = new RitajClassSessionDto();
+        session.setDayOfWeek(dayOfWeek);
+        session.setStartTime(startTime);
+        session.setEndTime(endTime);
+
+        session.setRoom(text(node, F_ROOM));
+        session.setBuilding(text(node, F_BUILDING));
+        session.setCampus(text(node, F_CAMPUS));
+
+        session.setSessionInternalId(text(node, F_SESSION_INTERNAL_ID));
+        session.setIsGeneratedSession(boolVal(node, F_IS_GENERATED_SESSION));
+
+        return session;
     }
 
-    // ---- Helpers ----
-
     private LocalTime parseTime(String raw) {
-        if (raw == null || raw.isBlank()) return null;
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+
         try {
-            // يدعم "HH:mm:ss" و "HH:mm"
-            String[] parts = raw.split(":");
-            int hour   = Integer.parseInt(parts[0].trim());
-            int minute = Integer.parseInt(parts[1].trim());
+            String[] parts = raw.trim().split(":");
+            int hour = Integer.parseInt(parts[0].trim());
+            int minute = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 0;
+
             return LocalTime.of(hour, minute);
         } catch (Exception e) {
-            log.warn("⚠️ [Parser] وقت غير صالح: {}", raw);
             return null;
         }
     }
 
     private String text(JsonNode node, String field) {
-        JsonNode f = node.path(field);
-        if (f.isNull() || f.isMissingNode()) return null;
-        String val = f.asText("").trim();
-        return val.isEmpty() ? null : val;
+        JsonNode value = node.path(field);
+        if (value.isNull() || value.isMissingNode()) return null;
+
+        String text = value.asText("").trim();
+        return text.isEmpty() || text.equalsIgnoreCase("null") ? null : text;
     }
 
     private Integer intVal(JsonNode node, String field) {
-        JsonNode f = node.path(field);
-        if (f.isNull() || f.isMissingNode()) return null;
-        return f.isNumber() ? f.asInt() : null;
+        JsonNode value = node.path(field);
+        if (value.isNull() || value.isMissingNode()) return null;
+
+        if (value.isNumber()) {
+            return value.asInt();
+        }
+
+        try {
+            String text = value.asText("").trim();
+            return text.isEmpty() ? null : Integer.parseInt(text);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
-    private boolean isNotBlank(String s) {
-        return s != null && !s.isBlank();
+    private Boolean boolVal(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        if (value.isNull() || value.isMissingNode()) return null;
+
+        if (value.isBoolean()) {
+            return value.asBoolean();
+        }
+
+        String text = value.asText("").trim();
+        if (text.isEmpty()) return null;
+
+        if ("true".equalsIgnoreCase(text)) return true;
+        if ("false".equalsIgnoreCase(text)) return false;
+
+        return null;
     }
 
-    // ---- Legacy support ----
+    private boolean isNotBlank(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+
+        return null;
+    }
 
     @Override
     @Deprecated
     public List<RitajCourseDto> parseCourses(String arContent, String enContent) {
         throw new UnsupportedOperationException(
-                "هذه الميثود مهملة. استخدم parseJson(jsonContent) مع قراءة ملف courses_v5.json"
+                "هذه الميثود مهملة. استخدم parseJson(jsonContent) مع ملف STUDENT_BAG_FINAL_DATA_normalized.json"
         );
     }
 }

@@ -45,7 +45,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Slf4j
@@ -53,7 +55,7 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class RitajSyncServiceImpl implements RitajSyncService {
 
-    private static final String DEFAULT_TERM_CODE = "2025-2026-SECOND";
+    private static final String DEFAULT_TERM_CODE = "2025-2026-SPRING";
     private static final String DEFAULT_TERM_NAME = "Second Semester 2025/2026";
     private static final String DEFAULT_ACADEMIC_YEAR = "2025/2026";
 
@@ -86,7 +88,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
     @Override
     @Transactional
     public RitajSyncResult syncTermFromRitaj(Long institutionId, String baseFileName) {
-        log.info("🚀 [Ritaj Sync] بدء مزامنة ملف JSON: {}", baseFileName);
+        log.info("🚀 [Ritaj Sync] بدء مزامنة ملف JSON normalized: {}", baseFileName);
 
         Institution institution = institutionRepository.findById(institutionId)
                 .orElseThrow(() -> new IllegalArgumentException("المؤسسة غير موجودة: " + institutionId));
@@ -99,19 +101,26 @@ public class RitajSyncServiceImpl implements RitajSyncService {
             throw new IllegalArgumentException("ملف JSON لا يحتوي على مساقات صالحة");
         }
 
+        prepareStorageCodes(courses);
+
         Term term = getOrCreateCurrentRitajTerm(institution);
 
         SyncCounters counters = new SyncCounters();
 
         for (RitajCourseDto courseDto : courses) {
-            if (courseDto.getCode() == null || courseDto.getCode().isBlank()) {
+            if (storageCourseCode(courseDto) == null) {
                 continue;
             }
 
             try {
                 processCourseSync(courseDto, institution, term, counters);
             } catch (Exception e) {
-                log.error("❌ [Ritaj Sync] فشل مزامنة المساق {}: {}", courseDto.getCode(), e.getMessage(), e);
+                log.error("❌ [Ritaj Sync] فشل مزامنة المساق originalCode={}, storageCode={}: {}",
+                        courseDto.getCode(),
+                        courseDto.getStorageCode(),
+                        e.getMessage(),
+                        e
+                );
                 throw e;
             }
         }
@@ -119,6 +128,28 @@ public class RitajSyncServiceImpl implements RitajSyncService {
         log.info("✅ [Ritaj Sync] اكتملت المهمة بنجاح: {}", counters);
 
         return buildSyncResult(counters);
+    }
+
+    private void prepareStorageCodes(List<RitajCourseDto> courses) {
+        Map<String, Integer> codeCounts = new LinkedHashMap<>();
+
+        for (RitajCourseDto dto : courses) {
+            String code = normalizeKey(dto.getCode());
+            if (code == null) continue;
+            codeCounts.put(code, codeCounts.getOrDefault(code, 0) + 1);
+        }
+
+        for (RitajCourseDto dto : courses) {
+            String originalCode = firstNonBlank(dto.getCode());
+            String normalized = normalizeKey(originalCode);
+            boolean duplicatedCode = normalized != null && codeCounts.getOrDefault(normalized, 0) > 1;
+
+            if (duplicatedCode) {
+                dto.setStorageCode(firstNonBlank(dto.getCourseInternalId(), originalCode));
+            } else {
+                dto.setStorageCode(originalCode);
+            }
+        }
     }
 
     private Term getOrCreateCurrentRitajTerm(Institution institution) {
@@ -130,7 +161,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
                     newTerm.setTermCode(DEFAULT_TERM_CODE);
                     newTerm.setName(DEFAULT_TERM_NAME);
                     newTerm.setAcademicYear(DEFAULT_ACADEMIC_YEAR);
-                    newTerm.setSeason(resolveDefaultSeason());
+                    newTerm.setSeason(Season.SPRING);
                     newTerm.setStartDate(LocalDate.of(2026, 1, 25));
                     newTerm.setEndDate(LocalDate.of(2026, 5, 30));
                     newTerm.setIsCurrent(true);
@@ -144,18 +175,6 @@ public class RitajSyncServiceImpl implements RitajSyncService {
         });
 
         return term;
-    }
-
-    private Season resolveDefaultSeason() {
-        try {
-            return Season.valueOf("SECOND");
-        } catch (Exception ignored) {
-            try {
-                return Season.valueOf("SPRING");
-            } catch (Exception ignoredAgain) {
-                return Season.values()[0];
-            }
-        }
     }
 
     private void processCourseSync(
@@ -188,7 +207,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
             refreshSectionSessions(section, sectionDto, counters);
         }
 
-        linkLabsToLectures(course, term, counters);
+        linkChildSectionsToLectures(course, term, dto, counters);
     }
 
     private Faculty upsertFaculty(RitajCourseDto dto, Institution institution, SyncCounters counters) {
@@ -203,7 +222,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
                 .map(faculty -> {
                     facultySyncMapper.map(dto, faculty, institution);
                     faculty.setExternalId(externalId);
-                    faculty.setNameEnglish(dto.getFacultyNameEnglish());
+                    faculty.setNameEnglish(firstNonBlank(dto.getFacultyNameEnglish(), faculty.getNameArabic()));
                     faculty.setIsActive(true);
                     return facultyRepository.save(faculty);
                 })
@@ -211,7 +230,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
                     Faculty faculty = new Faculty();
                     facultySyncMapper.map(dto, faculty, institution);
                     faculty.setExternalId(externalId);
-                    faculty.setNameEnglish(dto.getFacultyNameEnglish());
+                    faculty.setNameEnglish(firstNonBlank(dto.getFacultyNameEnglish(), faculty.getNameArabic()));
                     faculty.setIsActive(true);
                     counters.facultiesCreated++;
                     return facultyRepository.save(faculty);
@@ -235,7 +254,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
                     departmentSyncMapper.map(dto, department, faculty);
                     department.setExternalId(firstNonBlank(department.getExternalId(), externalId));
                     department.setNameArabic(nameArabic);
-                    department.setNameEnglish(dto.getDepartmentNameEnglish());
+                    department.setNameEnglish(firstNonBlank(dto.getDepartmentNameEnglish(), nameArabic));
                     department.setProgramNameArabic(dto.getProgramNameArabic());
                     department.setProgramNameEnglish(dto.getProgramNameEnglish());
                     department.setFaculty(faculty);
@@ -247,7 +266,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
                     departmentSyncMapper.map(dto, department, faculty);
                     department.setExternalId(externalId);
                     department.setNameArabic(nameArabic);
-                    department.setNameEnglish(dto.getDepartmentNameEnglish());
+                    department.setNameEnglish(firstNonBlank(dto.getDepartmentNameEnglish(), nameArabic));
                     department.setProgramNameArabic(dto.getProgramNameArabic());
                     department.setProgramNameEnglish(dto.getProgramNameEnglish());
                     department.setFaculty(faculty);
@@ -276,17 +295,19 @@ public class RitajSyncServiceImpl implements RitajSyncService {
             return Optional.empty();
         }
 
-        List<Department> byNameArabic = entityManager.createQuery("""
+        List<Department> byNameArabicAndFaculty = entityManager.createQuery("""
                         SELECT d
                         FROM Department d
                         WHERE d.nameArabic = :nameArabic
+                          AND d.faculty = :faculty
                         """, Department.class)
                 .setParameter("nameArabic", nameArabic)
+                .setParameter("faculty", faculty)
                 .setMaxResults(1)
                 .getResultList();
 
-        if (!byNameArabic.isEmpty()) {
-            return Optional.of(byNameArabic.get(0));
+        if (!byNameArabicAndFaculty.isEmpty()) {
+            return Optional.of(byNameArabicAndFaculty.get(0));
         }
 
         return Optional.empty();
@@ -298,21 +319,17 @@ public class RitajSyncServiceImpl implements RitajSyncService {
             Department department,
             SyncCounters counters
     ) {
-        return courseRepository.findByCodeAndInstitution(dto.getCode(), institution)
+        String storageCode = storageCourseCode(dto);
+
+        return courseRepository.findByCodeAndInstitution(storageCode, institution)
                 .map(course -> {
                     courseSyncMapper.map(dto, course, institution, department);
-                    course.setNameEnglish(dto.getNameEnglish());
-                    course.setProgramNameArabic(dto.getProgramNameArabic());
-                    course.setProgramNameEnglish(dto.getProgramNameEnglish());
                     counters.coursesUpdated++;
                     return courseRepository.save(course);
                 })
                 .orElseGet(() -> {
                     Course course = new Course();
                     courseSyncMapper.map(dto, course, institution, department);
-                    course.setNameEnglish(dto.getNameEnglish());
-                    course.setProgramNameArabic(dto.getProgramNameArabic());
-                    course.setProgramNameEnglish(dto.getProgramNameEnglish());
                     counters.coursesCreated++;
                     return courseRepository.save(course);
                 });
@@ -340,7 +357,7 @@ public class RitajSyncServiceImpl implements RitajSyncService {
         String finalArabic = firstNonBlank(nameArabic, lookupName);
         String finalEnglish = "TBD".equalsIgnoreCase(nameEnglish)
                 ? "To Be Determined"
-                : nameEnglish;
+                : firstNonBlank(nameEnglish, lookupName);
 
         return instructorRepository.findByFullNameArabicAndInstitution(finalArabic, institution)
                 .map(instructor -> {
@@ -394,12 +411,13 @@ public class RitajSyncServiceImpl implements RitajSyncService {
             SyncCounters counters
     ) {
         SectionType sectionType = courseSectionSyncMapper.mapSectionType(dto.getSectionType());
+        String sectionNumber = firstNonBlank(dto.getSectionNumber(), "1");
 
         return courseSectionRepository
                 .findByCourseAndTermAndSectionNumberAndSectionType(
                         course,
                         term,
-                        dto.getSectionNumber(),
+                        sectionNumber,
                         sectionType
                 )
                 .map(section -> {
@@ -435,36 +453,91 @@ public class RitajSyncServiceImpl implements RitajSyncService {
         }
     }
 
-    private void linkLabsToLectures(Course course, Term term, SyncCounters counters) {
+    private void linkChildSectionsToLectures(
+            Course course,
+            Term term,
+            RitajCourseDto courseDto,
+            SyncCounters counters
+    ) {
         List<CourseSection> savedSections = courseSectionRepository.findByCourseAndTerm(course, term);
 
-        for (CourseSection section : savedSections) {
-            if (section.getSectionType() != SectionType.LAB) {
+        for (RitajSectionDto childDto : courseDto.getSections()) {
+            SectionType childType = courseSectionSyncMapper.mapSectionType(childDto.getSectionType());
+
+            boolean isChildSection =
+                    childType == SectionType.LAB
+                            || childType == SectionType.DISCUSSION
+                            || childType == SectionType.PRACTICAL;
+
+            if (!isChildSection) {
                 continue;
             }
 
-            Optional<CourseSection> parentLecture = savedSections.stream()
-                    .filter(candidate -> candidate.getSectionType() == SectionType.LECTURE)
-                    .filter(candidate -> candidate.getInstructor() != null && section.getInstructor() != null)
-                    .filter(candidate -> candidate.getInstructor().getId().equals(section.getInstructor().getId()))
-                    .findFirst();
+            if (Boolean.TRUE.equals(courseDto.getIsLabCourse()) && childType == SectionType.LAB) {
+                continue;
+            }
 
-            if (parentLecture.isPresent()) {
-                section.setParentLectureSection(parentLecture.get());
-                courseSectionRepository.save(section);
+            String childNumber = firstNonBlank(childDto.getSectionNumber(), "1");
+
+            CourseSection child = savedSections.stream()
+                    .filter(section -> section.getSectionType() == childType)
+                    .filter(section -> childNumber.equals(section.getSectionNumber()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (child == null) {
+                continue;
+            }
+
+            String parentNumber = firstNonBlank(childDto.getParentLectureSectionNumber());
+
+            CourseSection parent = null;
+
+            if (parentNumber != null) {
+                parent = savedSections.stream()
+                        .filter(section -> section.getSectionType() == SectionType.LECTURE)
+                        .filter(section -> parentNumber.equals(section.getSectionNumber()))
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            if (parent == null) {
+                parent = savedSections.stream()
+                        .filter(section -> section.getSectionType() == SectionType.LECTURE)
+                        .findFirst()
+                        .orElse(null);
+            }
+
+            if (parent != null) {
+                child.setParentLectureSection(parent);
+                courseSectionRepository.save(child);
                 counters.labsLinked++;
 
                 log.info(
-                        "🔗 [Link Success] تم ربط مختبر شعبة {} بمحاضرة نفس المدرس",
-                        section.getSectionNumber()
+                        "🔗 [Link Success] course={}, childType={}, childSection={}, parentLecture={}",
+                        course.getCode(),
+                        childType,
+                        child.getSectionNumber(),
+                        parent.getSectionNumber()
                 );
             } else {
                 log.warn(
-                        "⚠️ [Link Fail] لم نجد محاضرة أساسية لنفس المدرس لمختبر شعبة {}",
-                        section.getSectionNumber()
+                        "⚠️ [Link Fail] course={}, childType={}, childSection={} has no lecture parent",
+                        course.getCode(),
+                        childType,
+                        child.getSectionNumber()
                 );
             }
         }
+    }
+
+    private String storageCourseCode(RitajCourseDto dto) {
+        return firstNonBlank(dto.getStorageCode(), dto.getCourseInternalId(), dto.getCode());
+    }
+
+    private String normalizeKey(String value) {
+        String normalized = firstNonBlank(value);
+        return normalized == null ? null : normalized.toUpperCase();
     }
 
     private String firstNonBlank(String... values) {

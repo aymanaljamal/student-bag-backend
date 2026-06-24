@@ -21,21 +21,22 @@ public class CourseSectionSyncMapper {
         section.setCourse(course);
         section.setTerm(term);
 
-        // الـ ExternalId هو المفتاح لعدم تكرار الشعبة عند إعادة المزامنة
-        section.setExternalId(safeTrim(dto.getExternalId()));
+        section.setExternalId(firstNonBlank(
+                dto.getSectionInternalId(),
+                dto.getExternalId(),
+                course.getCode() + "-" + safeOrDefault(dto.getSectionType(), "Lecture") + "-" + safeOrDefault(dto.getSectionNumber(), "1")
+        ));
+
         section.setSectionNumber(safeOrDefault(dto.getSectionNumber(), "1"));
-
-        // تحويل نوع الشعبة مع دعم لغات ريتاج
         section.setSectionType(mapSectionType(dto.getSectionType()));
-
         section.setInstructor(instructor);
 
-        // إذا لم تتوفر السعة من ريتاج، نضع قيمة افتراضية منطقية (مثلاً 40) بدل الـ 0
-        section.setCapacity(dto.getCapacity() == null || dto.getCapacity() == 0 ? 40 : dto.getCapacity());
+        section.setCapacity(dto.getCapacity() == null || dto.getCapacity() <= 0 ? 40 : dto.getCapacity());
         section.setEnrolled(dto.getEnrolled() == null ? 0 : dto.getEnrolled());
 
         section.setIsOfficial(true);
     }
+
     public SectionType mapSectionType(String value) {
         if (value == null || value.isBlank()) {
             return SectionType.LECTURE;
@@ -43,7 +44,13 @@ public class CourseSectionSyncMapper {
 
         String normalized = value.trim().toUpperCase();
 
-        // فحص النوع بناءً على الكلمات المفتاحية في ريتاج (عربي وإنجليزي)
+        if (normalized.contains("DISCUSSION")
+                || normalized.contains("DISC")
+                || normalized.contains("نقاش")
+                || normalized.contains("مناقشة")) {
+            return SectionType.DISCUSSION;
+        }
+
         if (normalized.contains("LAB") || normalized.contains("مختبر")) {
             return SectionType.LAB;
         }
@@ -52,22 +59,32 @@ public class CourseSectionSyncMapper {
             return SectionType.SEMINAR;
         }
 
-        if (normalized.contains("PRACTICAL") || normalized.contains("عملي") || normalized.contains("تدريب")) {
+        if (normalized.contains("PRACTICAL")
+                || normalized.contains("عملي")
+                || normalized.contains("تدريب")) {
             return SectionType.PRACTICAL;
         }
 
-        // القيمة الافتراضية لأي شيء آخر (مثل "محاضرة" أو "بحث")
         return SectionType.LECTURE;
     }
 
     private String safeTrim(String value) {
         if (value == null) return null;
         String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
+        return trimmed.isEmpty() || trimmed.equalsIgnoreCase("N/A") ? null : trimmed;
     }
 
     private String safeOrDefault(String value, String defaultValue) {
         String trimmed = safeTrim(value);
         return trimmed == null ? defaultValue : trimmed;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            String trimmed = safeTrim(value);
+            if (trimmed != null) return trimmed;
+        }
+
+        return null;
     }
 }

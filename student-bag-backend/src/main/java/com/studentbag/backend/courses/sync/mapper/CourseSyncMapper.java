@@ -4,6 +4,7 @@ import com.studentbag.backend.courses.entity.Course;
 import com.studentbag.backend.courses.entity.Department;
 import com.studentbag.backend.courses.sync.dto.RitajCourseDto;
 import com.studentbag.backend.courses.sync.helper.CourseCodeMetadataHelper;
+import com.studentbag.backend.domain.enums.courses.AcademicLevel;
 import com.studentbag.backend.institution.entity.Institution;
 import org.springframework.stereotype.Component;
 
@@ -17,32 +18,55 @@ public class CourseSyncMapper {
     }
 
     public void map(RitajCourseDto dto, Course course, Institution institution, Department department) {
-        String code = safeOrDefault(dto.getCode(), "UNKNOWN");
+        String originalCode = safeOrDefault(dto.getCode(), "UNKNOWN");
+        String storageCode = safeOrDefault(dto.getStorageCode(), safeOrDefault(dto.getCourseInternalId(), originalCode));
 
         course.setInstitution(institution);
         course.setDepartment(department);
-        course.setExternalId(safeTrim(dto.getExternalId()));
-        course.setCode(code);
 
-        // ضمان وجود أسماء حتى لو لم يتم العثور عليها في الـ HTML
-        course.setNameArabic(safeOrDefault(dto.getNameArabic(), code));
-        course.setNameEnglish(safeOrDefault(dto.getNameEnglish(), code));
+        /*
+         * Important:
+         * - course.code has a unique constraint with institution_id.
+         * - duplicated special-topic courses such as COMP438 cannot all be saved as COMP438.
+         * - therefore storageCode is used for the DB code.
+         * - the original Ritaj code is preserved in externalId.
+         */
+        course.setExternalId(originalCode);
+        course.setCode(storageCode);
 
-        course.setDescription(safeTrim(dto.getDescription()));
+        course.setNameArabic(safeOrDefault(dto.getNameArabic(), originalCode));
+        course.setNameEnglish(safeOrDefault(dto.getNameEnglish(), originalCode));
+
+        course.setDescription(firstNonBlank(
+                dto.getDescription(),
+                dto.getDescriptionEnglish(),
+                dto.getDescriptionArabic()
+        ));
+
         course.setProgramNameArabic(safeTrim(dto.getProgramNameArabic()));
         course.setProgramNameEnglish(safeTrim(dto.getProgramNameEnglish()));
 
-        // الأولوية للبيانات المستخرجة، ثم الاستنتاج من الكود
         Integer creditHours = dto.getCreditHours();
-        if (creditHours == null || creditHours == 0) {
-            creditHours = courseCodeMetadataHelper.extractCreditHours(code);
+        if (creditHours == null || creditHours <= 0) {
+            creditHours = courseCodeMetadataHelper.extractCreditHours(originalCode);
         }
         course.setCreditHours(creditHours);
 
-        // استخراج المستوى الأكاديمي (سنة 1، 2، إلخ)
-        course.setLevel(courseCodeMetadataHelper.extractAcademicLevel(code));
-
+        course.setLevel(mapAcademicLevel(dto.getAcademicLevel(), originalCode));
         course.setIsActive(true);
+    }
+
+    private AcademicLevel mapAcademicLevel(String rawLevel, String courseCode) {
+        if (rawLevel != null && !rawLevel.isBlank()) {
+            try {
+                return AcademicLevel.valueOf(rawLevel.trim().toUpperCase());
+            } catch (Exception ignored) {
+                // fallback below
+            }
+        }
+
+        AcademicLevel fromCode = courseCodeMetadataHelper.extractAcademicLevel(courseCode);
+        return fromCode == null ? AcademicLevel.FIRST_YEAR : fromCode;
     }
 
     private String safeTrim(String value) {
@@ -54,5 +78,14 @@ public class CourseSyncMapper {
     private String safeOrDefault(String value, String defaultValue) {
         String trimmed = safeTrim(value);
         return trimmed == null ? defaultValue : trimmed;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            String trimmed = safeTrim(value);
+            if (trimmed != null) return trimmed;
+        }
+
+        return null;
     }
 }
