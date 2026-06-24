@@ -757,8 +757,10 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
 
         Course course = section.getCourse();
 
-        if (course.getCode() != null && !course.getCode().trim().isEmpty()) {
-            return course.getCode().trim();
+        String displayCode = displayCourseCode(course);
+
+        if (displayCode != null && !displayCode.isBlank()) {
+            return displayCode;
         }
 
         if (course.getNameEnglish() != null && !course.getNameEnglish().trim().isEmpty()) {
@@ -830,7 +832,7 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
         return ActiveScheduleCourseDTO.builder()
                 .id(course.getId())
                 .externalId(course.getExternalId())
-                .code(course.getCode())
+                .code(displayCourseCode(course))
                 .nameArabic(course.getNameArabic())
                 .nameEnglish(course.getNameEnglish())
                 .description(course.getDescription())
@@ -840,6 +842,22 @@ public class ScheduleManagementServiceImpl implements ScheduleManagementService 
                 .instructorNameArabic(instructorNameArabic)
                 .instructorNameEnglish(instructorNameEnglish)
                 .build();
+    }
+
+    private String displayCourseCode(Course course) {
+        if (course == null) {
+            return null;
+        }
+
+        if (course.getExternalId() != null && !course.getExternalId().isBlank()) {
+            return course.getExternalId().trim();
+        }
+
+        if (course.getCode() != null && !course.getCode().isBlank()) {
+            return course.getCode().trim();
+        }
+
+        return null;
     }
 
     private static String safeText(String value, String fallback) {

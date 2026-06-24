@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.*;
 public class RitajSyncController {
 
     private static final String DEFAULT_SOURCE_FILE =
-            "course_data/STUDENT_BAG_FINAL_DATA";
+            "course_data/STUDENT_BAG_FINAL_DATA_normalized";
 
     private final RitajSyncService ritajSyncService;
     private final RitajDatabaseCleanupService ritajDatabaseCleanupService;
@@ -37,7 +37,10 @@ public class RitajSyncController {
         boolean clearOldData = request.getClearOldData() == null || request.getClearOldData();
 
         log.info("📥 [RitajSync] بدء مزامنة بيانات ريتاج للمؤسسة: {}, الملف: {}, clearOldData: {}",
-                institutionId, sourceFile, clearOldData);
+                institutionId,
+                sourceFile,
+                clearOldData
+        );
 
         try {
             if (clearOldData) {

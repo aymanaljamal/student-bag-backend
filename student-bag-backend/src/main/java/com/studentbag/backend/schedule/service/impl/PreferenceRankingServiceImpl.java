@@ -2,6 +2,7 @@ package com.studentbag.backend.schedule.service.impl;
 
 import com.studentbag.backend.courses.entity.ClassSession;
 import com.studentbag.backend.courses.entity.CourseSection;
+import com.studentbag.backend.domain.enums.courses.SectionType;
 import com.studentbag.backend.schedule.dto.response.ScheduleOptionResponseDTO;
 import com.studentbag.backend.schedule.entity.StudentSchedulePreference;
 import com.studentbag.backend.schedule.mapper.TimetableMapper;
@@ -56,7 +57,21 @@ public class PreferenceRankingServiceImpl implements PreferenceRankingService {
         boolean earlyMorningFound = false;
         Set<DayOfWeek> activeDays = new HashSet<>();
 
+        if (sections == null || sections.isEmpty()) {
+            return score;
+        }
+
         for (CourseSection section : sections) {
+            if (section == null) {
+                continue;
+            }
+
+            // Safety guard: discussions are child/secondary components and should not affect ranking twice.
+            // The generator also filters them out, but this keeps ranking safe if one slips in.
+            if (section.getSectionType() == SectionType.DISCUSSION) {
+                continue;
+            }
+
             Long courseId = section.getCourse() != null ? section.getCourse().getId() : null;
 
             int difficulty = 3;
@@ -64,14 +79,23 @@ public class PreferenceRankingServiceImpl implements PreferenceRankingService {
                 difficulty = courseRatings.getOrDefault(courseId, 3);
             }
 
+            if (section.getClassSessions() == null || section.getClassSessions().isEmpty()) {
+                continue;
+            }
+
             for (ClassSession session : section.getClassSessions()) {
+                if (session == null || session.getDayOfWeek() == null) {
+                    continue;
+                }
+
                 activeDays.add(session.getDayOfWeek());
 
-                if (Boolean.TRUE.equals(prefs.getAvoidEarlyMorning()) && prefs.getEarliestStartTime() != null) {
-                    if (session.getStartTime().isBefore(prefs.getEarliestStartTime())) {
-                        score -= 5.0;
-                        earlyMorningFound = true;
-                    }
+                if (Boolean.TRUE.equals(prefs.getAvoidEarlyMorning())
+                        && prefs.getEarliestStartTime() != null
+                        && session.getStartTime() != null
+                        && session.getStartTime().isBefore(prefs.getEarliestStartTime())) {
+                    score -= 5.0;
+                    earlyMorningFound = true;
                 }
 
                 dailyDifficultyMap.merge(session.getDayOfWeek(), difficulty, Integer::sum);

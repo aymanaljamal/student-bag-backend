@@ -5,5 +5,8 @@ public enum AcademicLevel {
     SECOND_YEAR,
     THIRD_YEAR,
     FOURTH_YEAR,
-    FIFTH_YEAR
+    FIFTH_YEAR,
+    SIXTH_YEAR,
+    SEVENTH_YEAR,
+    EIGHTH_YEAR
 }

@@ -480,8 +480,10 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
 
         Course course = section.getCourse();
 
-        if (course.getCode() != null && !course.getCode().isBlank()) {
-            return course.getCode();
+        String displayCode = displayCourseCode(course);
+
+        if (displayCode != null && !displayCode.isBlank()) {
+            return displayCode;
         }
 
         if (course.getNameEnglish() != null && !course.getNameEnglish().isBlank()) {
@@ -493,6 +495,22 @@ public class StudentScheduleSaveServiceImpl implements StudentScheduleSaveServic
         }
 
         return "Course";
+    }
+
+    private String displayCourseCode(Course course) {
+        if (course == null) {
+            return null;
+        }
+
+        if (course.getExternalId() != null && !course.getExternalId().isBlank()) {
+            return course.getExternalId().trim();
+        }
+
+        if (course.getCode() != null && !course.getCode().isBlank()) {
+            return course.getCode().trim();
+        }
+
+        return null;
     }
 
     private String buildDescription(CourseSection section) {

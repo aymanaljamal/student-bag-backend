@@ -50,7 +50,7 @@ public class ManualScheduleServiceImpl implements ManualScheduleService {
                 .stream()
                 .map(course -> new ManualCourseOptionDto(
                         course.getId(),
-                        course.getCode(),
+                        displayCourseCode(course),
                         course.getNameArabic(),
                         course.getNameEnglish(),
                         course.getCreditHours()
@@ -390,8 +390,10 @@ public class ManualScheduleServiceImpl implements ManualScheduleService {
     ) {
         String courseTitle;
 
-        if (course.getCode() != null && !course.getCode().trim().isEmpty()) {
-            courseTitle = course.getCode().trim();
+        String displayCode = displayCourseCode(course);
+
+        if (displayCode != null && !displayCode.isBlank()) {
+            courseTitle = displayCode;
         } else if (course.getNameEnglish() != null && !course.getNameEnglish().trim().isEmpty()) {
             courseTitle = course.getNameEnglish().trim();
         } else if (course.getNameArabic() != null && !course.getNameArabic().trim().isEmpty()) {
@@ -440,6 +442,22 @@ public class ManualScheduleServiceImpl implements ManualScheduleService {
         }
 
         return value.trim();
+    }
+
+    private String displayCourseCode(Course course) {
+        if (course == null) {
+            return null;
+        }
+
+        if (course.getExternalId() != null && !course.getExternalId().isBlank()) {
+            return course.getExternalId().trim();
+        }
+
+        if (course.getCode() != null && !course.getCode().isBlank()) {
+            return course.getCode().trim();
+        }
+
+        return null;
     }
 
     private String cleanOptional(String value) {
