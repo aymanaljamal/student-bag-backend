@@ -1,343 +1,204 @@
-# ⚙️ Student Bag Backend
+# Student Bag Backend
 
-The server-side application for the Student Bag academic platform. Provides REST APIs for managing students, instructors, parents, courses, schedules, resources, notes, tasks, notifications, reports, and AI-powered academic support.
+A modern backend service for the Student Bag academic platform, built with Spring Boot and PostgreSQL. It powers authentication, academic management, schedules, tasks, notes, resources, notifications, analytics, and an AI-powered assistant for students and instructors.
 
-Built with **Spring Boot** and **PostgreSQL**, with secure authentication and role-based access control.
-
----
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-  - [Requirements](#requirements)
-  - [Environment Configuration](#environment-configuration)
-  - [Database Configuration](#database-configuration)
-  - [Running Locally](#running-locally)
-  - [Running with Docker](#running-with-docker)
-- [API Reference](#api-reference)
-  - [Base URL](#api-base-url)
-  - [Main Modules](#main-api-modules)
-  - [Authentication](#authentication)
-  - [User Roles](#user-roles)
-- [Deployment Notes](#docker-deployment-notes)
-- [Development Guidelines](#development-guidelines)
-- [Git Workflow](#git-workflow)
-- [Project Status](#project-status)
-- [Related Project](#related-project)
-
----
+<p align="center">
+  <img src="https://img.shields.io/badge/Java-17-orange" alt="Java 17" />
+  <img src="https://img.shields.io/badge/Spring%20Boot-3.5.x-brightgreen" alt="Spring Boot" />
+  <img src="https://img.shields.io/badge/PostgreSQL-16-blue" alt="PostgreSQL" />
+  <img src="https://img.shields.io/badge/License-Academic-lightgrey" alt="License" />
+</p>
 
 ## Overview
 
-Student Bag is a smart academic assistance platform designed to support different university users from one system. The backend serves four user roles, each with specific permissions and access to different academic features:
+Student Bag Backend is a modular Spring Boot monolith that provides a rich set of REST APIs for university-related workflows. The system supports multiple user roles and includes features for:
 
-| Role | Description |
-|------|-------------|
-| 🎓 **Student** | Tasks, notes, schedules, resources, events |
-| 👨‍🏫 **Instructor** | Resource uploads, event/opportunity management |
-| 🛠️ **Admin** | Users, courses, approvals, reports, notifications |
-| 👪 **Parent** | Access to student academic information |
+- user authentication and role-based access
+- academic structure and course management
+- schedules, tasks, notes, and reminders
+- resources, approvals, and notifications
+- events and opportunity management
+- analytics dashboards and reporting
+- AI chatbot support with OpenAI integration
 
----
+## Key Features
 
-## Features
+### 🔐 Authentication and Security
+- registration for students, instructors, and administrators
+- login and password change flows
+- JWT-based authentication with stateless security
+- protected endpoints for business logic and admin operations
 
-| Module | Includes |
-|--------|----------|
-| **Authentication & Authorization** | Registration/login, JWT auth, role-based access control, secure password handling, profile management |
-| **Academic Management** | Courses, course sections, class sessions, student schedules, schedule generation, active schedule tracking |
-| **Resources Management** | Upload/manage resources (files & links), instructor uploads, admin approval/rejection workflow, visibility control, history tracking |
-| **Tasks & Notes** | Student tasks, subtasks, notes, attachments, local sync support |
-| **Events & Opportunities** | Academic events, student registration, opportunities, cancellation, role-based access |
-| **Notifications** | System notifications, admin announcements, task reminders, event updates, resource approval/rejection alerts |
-| **Reports & Analytics** | Admin reports, course reports, user statistics, resource statistics, activity analytics |
-| **AI Chatbot Support** | Academic assistant, study support, quiz generation, schedule help, task/course assistance |
+### 🎓 Academic Management
+- institutions, faculties, departments, terms, courses, course sections, and class sessions
+- course synchronization support through a dedicated integration flow
 
----
+### 📚 Productivity Tools
+- tasks and subtasks
+- notes and attachments
+- resource library and personal folders
+- schedule generation and preference handling
+
+### 🔔 Notifications and Events
+- recurring reminders for tasks and events
+- weekly resource notifications
+- Firebase-based push notification support
+
+### 🤖 AI Assistant
+- AI chat endpoints for academic help
+- conversation history and message management
+- OpenAI API integration for generating responses
 
 ## Tech Stack
 
-| Category | Technology |
-|----------|-----------|
-| Language | Java |
-| Framework | Spring Boot |
-| Security | Spring Security, JWT Authentication |
-| Database | PostgreSQL |
-| ORM | Spring Data JPA, Hibernate |
-| API | REST API |
-| Build Tool | Maven |
-| Containerization | Docker |
-| AI | OpenAI API |
-
----
+- Java 17
+- Spring Boot 3.5.x
+- Spring Web / WebFlux
+- Spring Data JPA / Hibernate
+- Spring Security
+- JWT (jjwt)
+- PostgreSQL
+- Flyway
+- OpenAPI / Swagger (springdoc)
+- Lombok
+- Docker / Docker Compose
+- Firebase Admin SDK
+- OpenAI API via WebClient
+- Tika and Tess4J
 
 ## Project Structure
 
 ```text
-student-bag-backend/
-├── src/
-│   ├── main/
-│   │   ├── java/
-│   │   │   └── com/studentbag/
-│   │   │       ├── auth/            # Authentication logic
-│   │   │       ├── config/          # App configuration
-│   │   │       ├── controller/      # REST controllers
-│   │   │       ├── dto/             # Data transfer objects
-│   │   │       ├── entity/          # JPA entities
-│   │   │       ├── enums/           # Enum types
-│   │   │       ├── exception/       # Exception handling
-│   │   │       ├── repository/      # Database repositories
-│   │   │       ├── security/        # Security configuration
-│   │   │       ├── service/         # Business logic
-│   │   │       └── StudentBagApplication.java
-│   │   │
-│   │   └── resources/
-│   │       ├── application.properties
-│   │       └── static/
-│   │
-│   └── test/
-│
-├── .mvn/
-├── pom.xml
-├── Dockerfile
-├── docker-compose.yml
-└── README.md
+src/main/java/com/studentbag/backend/
+├── administrator/
+├── analytics/
+├── auth/
+├── chatbot/
+├── common/
+├── courses/
+├── domain/
+├── events/
+├── grades/
+├── institution/
+├── instructor/
+├── notes/
+├── notifications/
+├── resources/
+├── schedule/
+├── security/
+├── student/
+├── tasks/
+├── users/
+└── StudentBagBackendApplication.java
 ```
 
----
+## Configuration
+
+The main app configuration is in [src/main/resources/application.yaml](src/main/resources/application.yaml).
+
+### Environment Variables
+
+```env
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/student_bag
+SPRING_DATASOURCE_USERNAME=postgres
+SPRING_DATASOURCE_PASSWORD=your_password
+
+MAIL_USERNAME=your_mail_username
+MAIL_PASSWORD=your_mail_password
+
+JWT_SECRET=your_secret_key
+JWT_EXPIRATION=86400000
+
+OPENAI_API_KEY=your_openai_key
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+
+GOOGLE_APPLICATION_CREDENTIALS=/app/src/main/resources/firebase/student-bag-fe020-firebase-adminsdk-fbsvc-973767165c.json
+FIREBASE_STORAGE_BUCKET=your_bucket
+```
 
 ## Getting Started
 
-### Requirements
-
+### Prerequisites
 - Java 17 or later
 - Maven
 - PostgreSQL
-- Docker and Docker Compose
+- Docker (optional)
 
-### Environment Configuration
-
-Create an environment file or configure the required variables inside `application.properties`:
-
-```env
-SERVER_PORT=8080
-
-DB_URL=jdbc:postgresql://localhost:5432/student_bag
-DB_USERNAME=postgres
-DB_PASSWORD=your_password
-
-JWT_SECRET=your_jwt_secret_key
-JWT_EXPIRATION=86400000
-
-OPENAI_API_KEY=your_openai_api_key
-```
-
-> ⚠️ **Never push real passwords, secret keys, or API keys to GitHub.**
-
-### Database Configuration
-
-Default PostgreSQL database name: `student_bag`
-
-Example local configuration:
-
-```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/student_bag
-spring.datasource.username=postgres
-spring.datasource.password=your_password
-
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
-```
-
-### Running Locally
-
-**1. Clone the repository**
+### Run Locally
 
 ```bash
-git clone https://github.com/aymanajamal/student-bag-backend.git
-cd student-bag-backend
+./mvnw clean install
+./mvnw spring-boot:run
 ```
 
-**2. Install dependencies**
-
-```bash
-mvn clean install
-```
-
-**3. Run the application**
-
-```bash
-mvn spring-boot:run
-```
-
-The backend will start on `http://localhost:8080`.
-
-### Running with Docker
-
-**1. Build the image**
-
-```bash
-docker build -t student-bag-backend .
-```
-
-**2. Run with Docker Compose**
-
-```bash
-docker compose up -d
-```
-
-**3. Check running containers**
-
-```bash
-docker ps
-```
-
-**4. Stop containers**
-
-```bash
-docker compose down
-```
-
----
-
-## API Reference
-
-### API Base URL
-
-| Environment | URL |
-|-------------|-----|
-| Local development | `http://localhost:8080/api/v1` |
-| Production (example) | `http://your-server-ip:8080/api/v1` |
-
-### Main API Modules
+The backend will be available at:
 
 ```text
-/api/v1/auth
-/api/v1/users
-/api/v1/courses
-/api/v1/course-sections
-/api/v1/class-sessions
-/api/v1/schedules
-/api/v1/resources
-/api/v1/events
-/api/v1/tasks
-/api/v1/notes
-/api/v1/notifications
-/api/v1/reports
-/api/v1/chatbot
+http://localhost:8080
 ```
+
+### Run with Docker
+
+```bash
+docker compose up --build
+```
+
+This starts:
+- PostgreSQL on port 5432
+- the API service on port 8080
+
+## API Overview
+
+The API is exposed under the `/api` base path.
+
+### Main Modules
+- `/api/auth` for authentication and account management
+- `/api/chatbot` for AI chat and conversation endpoints
+- `/api/courses`, `/api/institutions`, `/api/faculties`, `/api/departments`, `/api/terms` for academic data
+- `/api/tasks`, `/api/notes` for student productivity features
+- `/api/events`, `/api/notifications` for event and notification flows
+- `/api/resources` for resource management and approvals
+- `/api/schedule` for schedule-related operations
+- `/api/ritaj-sync` for course data synchronization
 
 ### Authentication
 
-Most endpoints require a JWT token. After login, include the token in the request header:
+Most protected endpoints require a JWT bearer token:
 
 ```text
-Authorization: Bearer <your_token>
+Authorization: Bearer <token>
 ```
 
-### User Roles
+## Security Notes
 
-The system supports role-based access control. Available roles:
+- JWT authentication is enforced through a custom filter
+- session management is stateless
+- CSRF is disabled in the current configuration
+- sensitive values should never be committed to source control
 
-- `ADMIN`
-- `INSTRUCTOR`
-- `STUDENT`
-- `PARENT`
+## Deployment Notes
 
-Each role has access only to the endpoints and actions allowed by the backend security configuration.
+- PostgreSQL must be reachable before startup
+- Docker Compose is the recommended local deployment method
+- secrets should be injected through environment variables or a secure deployment environment
 
----
+## Current Status
 
-## Docker Deployment Notes
+The backend includes a broad set of features for academic and student support, including:
 
-When deploying the backend on a server:
+- authentication and role-based access
+- course and academic data management
+- tasks, notes, schedules, and events
+- notifications and Firebase push support
+- AI chatbot integration with OpenAI
+- scheduled background notifications
 
-- ✅ Make sure PostgreSQL is running
-- ✅ Make sure port 8080 is open
-- ✅ Make sure the database credentials are correct
-- ✅ Keep secret keys inside environment variables
-- ✅ Never expose private keys in GitHub
-- ✅ Use Docker Compose for easier deployment
+## Notes
 
-Useful commands:
-
-```bash
-docker compose pull
-docker compose up -d
-docker logs -f student-bag-api
-docker restart student-bag-api
-```
-
----
-
-## Development Guidelines
-
-- Keep controllers clean
-- Put business logic inside services
-- Use repositories only for database access
-- Use DTOs instead of exposing entities directly
-- Validate request data before saving it
-- Keep API responses consistent
-- Use meaningful exception messages
-- Avoid hardcoded secrets
-- Test endpoints before pushing changes
-
----
-
-## Git Workflow
-
-Recommended branch naming:
-
-```text
-feature/auth-module
-feature/resources-management
-feature/schedule-generator
-feature/ai-chatbot
-fix/docker-backend-setup
-fix/notifications-service
-fix/resources-approval
-```
-
-Basic commands:
-
-```bash
-git checkout -b feature/branch-name
-git add .
-git commit -m "Add clear commit message"
-git push origin feature/branch-name
-```
-
----
-
-## Project Status
-
-The backend is under active development. Current focus areas:
-
-- Improving Docker deployment
-- Completing resources approval workflow
-- Enhancing notifications
-- Improving reports and analytics
-- Connecting AI chatbot features
-- Stabilizing student schedule generation
-- Improving API security and error handling
-
----
-
-## Related Project
-
-**Frontend repository:** [`student_bag_app`](https://github.com/aymanaljamal/student-bag-flutter) — built with Flutter, connects to this backend through REST APIs.
-
----
-
-## Author
-
-Developed by **Ayman Al Jamal**.
+This repository contains the backend side of the Student Bag platform. The architecture is a modular monolithic Spring Boot application rather than a microservices-based system.
 
 ## License
 
 This project is developed for academic purposes.
+
